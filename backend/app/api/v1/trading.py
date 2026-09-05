@@ -9,13 +9,17 @@ from app.api.deps import CurrentUser, SessionDep
 from app.execution import service as execution
 from app.execution.port import OrderRequest
 from app.models import Account, Bar, Fill, Instrument, Order, Policy, Position
+from app.models import AutonomyLevel, Watchlist, WatchlistItem
 from app.schemas.trading import (
     AccountOut,
     OrderDetail,
     OrderOut,
     PlaceOrderRequest,
+    PolicyOut,
+    PolicyUpdate,
     PositionOut,
     ReconciliationOut,
+    WatchlistItemOut,
 )
 
 router = APIRouter(prefix="/trading", tags=["trading"])
@@ -282,3 +286,153 @@ async def reconcile(session: SessionDep, user: CurrentUser) -> ReconciliationOut
         cash_difference=difference,
         position_mismatches=mismatches,
     )
+
+
+# --- policy -----------------------------------------------------------------
+
+
+@router.get("/policy", response_model=PolicyOut)
+async def get_policy(session: SessionDep, user: CurrentUser) -> PolicyOut:
+    policy = await _active_policy(session, user)
+    if policy is None:
+        raise HTTPException(status_code=404, detail="No active policy.")
+    return PolicyOut.model_validate(policy)
+
+
+@router.patch("/policy", response_model=PolicyOut)
+async def update_policy(
+    payload: PolicyUpdate, session: SessionDep, user: CurrentUser
+) -> PolicyOut:
+    """Writes a NEW version and retires the old one.
+
+    Policies are never edited in place, so every past decision can still name
+    the exact policy that governed it.
+    """
+    current = await _active_policy(session, user)
+    if current is None:
+        raise HTTPException(status_code=404, detail="No active policy.")
+
+    changes = payload.model_dump(exclude_none=True)
+    if not changes:
+        return PolicyOut.model_validate(current)
+
+    if "autonomy_level" in changes:
+        try:
+            changes["autonomy_level"] = AutonomyLevel(changes["autonomy_level"])
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Autonomy must be one of: "
+                       f"{', '.join(a.value for a in AutonomyLevel)}.",
+            ) from exc
+
+    carried = {
+        column.name: getattr(current, column.name)
+        for column in Policy.__table__.columns
+        if column.name not in ("id", "version", "created_at", "updated_at", "is_active")
+    }
+    carried.update(changes)
+
+    current.is_active = False
+    fresh = Policy(**carried, version=current.version + 1, is_active=True)
+    session.add(fresh)
+    await session.flush()
+    return PolicyOut.model_validate(fresh)
+
+
+# --- watchlist --------------------------------------------------------------
+
+
+async def _watchlist(session: SessionDep, user) -> Watchlist:
+    watchlist = (
+        await session.execute(select(Watchlist).where(Watchlist.user_id == user.id).limit(1))
+    ).scalar_one_or_none()
+    if watchlist is None:
+        watchlist = Watchlist(user_id=user.id, name="My list", is_default=True)
+        session.add(watchlist)
+        await session.flush()
+    return watchlist
+
+
+@router.get("/watchlist", response_model=list[WatchlistItemOut])
+async def get_watchlist(session: SessionDep, user: CurrentUser) -> list[WatchlistItemOut]:
+    watchlist = await _watchlist(session, user)
+    rows = list(
+        (
+            await session.execute(
+                select(WatchlistItem, Instrument)
+                .join(Instrument, Instrument.id == WatchlistItem.instrument_id)
+                .where(WatchlistItem.watchlist_id == watchlist.id)
+                .order_by(Instrument.symbol)
+            )
+        ).all()
+    )
+    out = []
+    for item, instrument in rows:
+        row = WatchlistItemOut.model_validate(item)
+        row.symbol = instrument.symbol
+        row.name = instrument.name
+        row.sector = instrument.sector
+        row.last_price = await _last_price(session, instrument.id)
+        out.append(row)
+    return out
+
+
+@router.post("/watchlist/{symbol}", response_model=WatchlistItemOut, status_code=201)
+async def add_to_watchlist(
+    symbol: str, session: SessionDep, user: CurrentUser, conviction: int = Query(2, ge=1, le=3)
+) -> WatchlistItemOut:
+    instrument = (
+        await session.execute(
+            select(Instrument).where(Instrument.symbol == symbol.upper())
+        )
+    ).scalar_one_or_none()
+    if instrument is None:
+        raise HTTPException(status_code=404, detail=f"No instrument {symbol.upper()}.")
+
+    watchlist = await _watchlist(session, user)
+    existing = (
+        await session.execute(
+            select(WatchlistItem).where(
+                WatchlistItem.watchlist_id == watchlist.id,
+                WatchlistItem.instrument_id == instrument.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.conviction = conviction
+        item = existing
+    else:
+        item = WatchlistItem(
+            watchlist_id=watchlist.id, instrument_id=instrument.id, conviction=conviction
+        )
+        session.add(item)
+    await session.flush()
+
+    row = WatchlistItemOut.model_validate(item)
+    row.symbol = instrument.symbol
+    row.name = instrument.name
+    row.sector = instrument.sector
+    return row
+
+
+@router.delete("/watchlist/{symbol}", status_code=204)
+async def remove_from_watchlist(symbol: str, session: SessionDep, user: CurrentUser) -> None:
+    watchlist = await _watchlist(session, user)
+    instrument = (
+        await session.execute(
+            select(Instrument).where(Instrument.symbol == symbol.upper())
+        )
+    ).scalar_one_or_none()
+    if instrument is None:
+        return
+    item = (
+        await session.execute(
+            select(WatchlistItem).where(
+                WatchlistItem.watchlist_id == watchlist.id,
+                WatchlistItem.instrument_id == instrument.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if item is not None:
+        await session.delete(item)

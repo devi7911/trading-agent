@@ -13,11 +13,14 @@ The full architecture and the ten-phase plan live in [`docs/`](./docs/).
 
 ## Where this is
 
-**Phase 05 — the agent trades on its own.** A synthetic market, a simulated
-exchange with a reconcilable ledger, rule-based strategies, a risk gate that can
-only shrink or refuse, and a loop that runs unattended in its own container.
+**All ten phases are built.** A synthetic market, a simulated exchange with a
+reconcilable ledger, rule-based strategies, a risk gate that can only shrink or
+refuse, an agent loop running unattended, a point-in-time backtester, an optional
+LLM reviewer, Telegram notifications, and a dashboard.
 
-Nothing here touches real money and nothing here ever will.
+Nothing here touches real money and nothing here ever will: no adapter in this
+repository reports `supports_live_trading`, and pointing one at a live venue
+raises rather than connects.
 
 | Phase | What | Status |
 | ----- | ---- | ------ |
@@ -27,11 +30,11 @@ Nothing here touches real money and nothing here ever will.
 | 03 | Rule-based strategy engine | ✅ done |
 | 04 | Risk gate | ✅ done |
 | 05 | Agent orchestrator (the loop) | ✅ done |
-| 06 | Angular dashboard | 🟡 market terminal built |
-| 07 | Telegram notifications | 🟡 digest generator |
-| 08 | LLM reasoning layer | |
-| 09 | Backtest & validation harness | 🟡 analytics and reports |
-| 10 | Hardening & Alpaca paper swap | |
+| 06 | Angular dashboard | ✅ done |
+| 07 | Telegram notifications | ✅ done |
+| 08 | LLM reasoning layer | ✅ done |
+| 09 | Backtest & validation harness | ✅ done |
+| 10 | Hardening & Alpaca paper swap | ✅ done |
 
 ---
 
@@ -54,6 +57,7 @@ docker compose up --build
 | ------- | --- |
 | Web app | http://localhost:4200 |
 | Market terminal | http://localhost:4200/market |
+| Metrics (Prometheus) | http://localhost:8000/api/v1/health/metrics |
 | API docs | http://localhost:8000/docs |
 | Readiness | http://localhost:8000/api/v1/health/ready |
 | Postgres | localhost:5432 |
@@ -177,6 +181,56 @@ curl /api/v1/agent/runs/{id}/decisions      # every symbol considered, and why
 curl /api/v1/trading/reconcile              # rebuild cash and positions from fills
 ```
 
+### Does it actually make money?
+
+Ask it, and be willing to hear no:
+
+```powershell
+docker compose exec api python -m app.cli backtest --days 400 --universe 10
+docker compose exec api python -m app.cli backtest --days 700 --walk-forward
+```
+
+The backtester drives the **same** loop, gate and exchange rather than
+re-implementing them, one simulated session at a time with an `as_of` cutoff so
+it can never see tomorrow's price. It reports against equal-weight buy-and-hold,
+names the constraint that blocked the most trades, and block-bootstraps the
+return series to show how much was luck.
+
+On the default synthetic market it currently **loses to buy-and-hold** — roughly
+46% against 111% over 277 sessions — at about half the volatility and half the
+drawdown. That is the honest answer for a capped, partly-invested, risk-managed
+agent in a violent bull market, and it is reported rather than tuned away.
+
+### The reasoning layer
+
+Off by default. When enabled it reviews decisions the rules have already made:
+
+```powershell
+ollama pull llama3.2:1b
+# set LLM_ENABLED=true in .env, then restart
+```
+
+The model may agree, temper conviction, or downgrade to hold. **It may not flip
+the direction.** If the rules say buy and the model says sell, the answer is the
+rules' buy with the review discarded — so a hallucination can block a trade but
+never originate one. Every failure mode falls back to the rules rather than
+blocking the loop.
+
+### Notifications
+
+```powershell
+# create a bot with @BotFather, put the token in .env as TELEGRAM_BOT_TOKEN
+docker compose exec api python -m app.cli digest
+```
+
+Commands are read-only or safety-increasing by design: `/status`, `/positions`,
+`/pnl`, `/explain SYMBOL`, `/halt`, `/resume`. There is deliberately no command
+that raises a limit, increases autonomy, or places a trade — anyone who gets hold
+of the chat can make the system safer, never bolder.
+
+Without a token the bot idles and notifications are still recorded and visible in
+the app. The agent never learns whether push is configured.
+
 ### Two clocks
 
 Wall time and market time are not the same thing, and conflating them is a bug.
@@ -210,10 +264,13 @@ docker compose down -v             # stop and wipe the volumes
 ```
 backend/
   app/
-    agent/       the loop, market clock, context builder, worker
-    core/        config, logging, db, security
-    execution/   broker port, matching engine, order lifecycle
+    agent/       the loop, market clock, context builder, worker, reconciler
+    backtest/    point-in-time replay, metrics, walk-forward, A/B
+    core/        config, logging, db, security, metrics
+    execution/   broker port, matching engine, order lifecycle, alpaca adapter
     market/      calendar, provider port, synthetic generator, ingestion
+    notify/      telegram client, severity routing, bot worker
+    reasoning/   llm client, response schema, the reviewer
     risk/        the gate and its types
     strategy/    indicators, signals, strategies
     models/      SQLAlchemy models (the schema is the contract)
@@ -225,7 +282,7 @@ backend/
 frontend/
   src/app/
     core/        auth service, interceptor, guard, market service, models
-    pages/       login, signup, dashboard, market, instrument
+    pages/       login, signup, portfolio, agent, market, instrument, settings
     shared/      app shell, chart theming, formatting helpers
 infra/           database init
 docs/            architecture and phase plan
@@ -244,6 +301,12 @@ docs/            architecture and phase plan
   never edited, so the ledger can always be rebuilt and compared.
 - The risk gate has property-based test coverage: no generated input has been
   able to talk it past a cap.
+- A reconciliation sweep runs every worker cycle; a mismatch halts the account
+  and notifies, because an agent trading on a wrong balance compounds the error
+  with every order.
+- The LLM may only agree with or downgrade a rule-based decision, never flip it.
+- Pointing the Alpaca adapter at a live URL raises `LiveTradingRefused`. Reaching
+  a live venue is not a configuration change.
 
 ## A note on scope
 

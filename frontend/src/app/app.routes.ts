@@ -18,7 +18,17 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./shared/shell').then((m) => m.Shell),
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'market' },
+      { path: '', pathMatch: 'full', redirectTo: 'portfolio' },
+      {
+        path: 'portfolio',
+        title: 'Portfolio',
+        loadComponent: () => import('./pages/portfolio/portfolio').then((m) => m.PortfolioPage),
+      },
+      {
+        path: 'agent',
+        title: 'Agent',
+        loadComponent: () => import('./pages/agent/agent').then((m) => m.AgentPage),
+      },
       {
         path: 'market',
         title: 'Market',
@@ -31,9 +41,9 @@ export const routes: Routes = [
           import('./pages/instrument/instrument').then((m) => m.InstrumentPage),
       },
       {
-        path: 'dashboard',
-        title: 'Account',
-        loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.DashboardPage),
+        path: 'settings',
+        title: 'Settings',
+        loadComponent: () => import('./pages/settings/settings').then((m) => m.SettingsPage),
       },
     ],
   },

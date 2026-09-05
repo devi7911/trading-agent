@@ -107,3 +107,54 @@ class ReconciliationOut(BaseModel):
     cash_from_fills: Decimal
     cash_difference: Decimal
     position_mismatches: list[dict] = []
+
+
+class PolicyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    version: int
+    risk_profile: str
+    autonomy_level: str
+    max_position_pct: Decimal
+    max_sector_pct: Decimal
+    cash_floor_pct: Decimal
+    stop_loss_pct: Decimal
+    take_profit_pct: Decimal
+    max_daily_loss_pct: Decimal
+    max_drawdown_pct: Decimal
+    max_trades_per_day: int
+    max_trades_per_symbol_per_day: int
+    auto_approve_below: Decimal
+    avoid_earnings: bool
+    allow_shorting: bool
+
+
+class PolicyUpdate(BaseModel):
+    """Every field optional: an edit writes a new version rather than mutating."""
+
+    risk_profile: str | None = None
+    autonomy_level: str | None = None
+    max_position_pct: Decimal | None = Field(default=None, gt=0, le=100)
+    max_sector_pct: Decimal | None = Field(default=None, gt=0, le=100)
+    cash_floor_pct: Decimal | None = Field(default=None, ge=0, le=95)
+    stop_loss_pct: Decimal | None = Field(default=None, gt=0, le=90)
+    take_profit_pct: Decimal | None = Field(default=None, gt=0, le=500)
+    max_daily_loss_pct: Decimal | None = Field(default=None, gt=0, le=100)
+    max_drawdown_pct: Decimal | None = Field(default=None, gt=0, le=100)
+    max_trades_per_day: int | None = Field(default=None, ge=1, le=200)
+    max_trades_per_symbol_per_day: int | None = Field(default=None, ge=1, le=50)
+    avoid_earnings: bool | None = None
+    allow_shorting: bool | None = None
+
+
+class WatchlistItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    symbol: str | None = None
+    name: str | None = None
+    sector: str | None = None
+    conviction: int
+    is_favourite: bool
+    last_price: Decimal | None = None
