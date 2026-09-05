@@ -18,6 +18,8 @@ dependencies = [
   "redis>=5.2",
   "structlog>=24.4",
   "httpx>=0.28",
+  "numpy>=2.1",
+  "typer>=0.15",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +48,8 @@ ignore = ["S101"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]
 "alembic/*" = ["E501"]
+# The sector table is aligned on purpose; column alignment beats the line limit.
+"app/market/synthetic/universe.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
