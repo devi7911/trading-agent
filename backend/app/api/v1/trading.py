@@ -8,8 +8,18 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, SessionDep
 from app.execution import service as execution
 from app.execution.port import OrderRequest
-from app.models import Account, Bar, Fill, Instrument, Order, Policy, Position
-from app.models import AutonomyLevel, Watchlist, WatchlistItem
+from app.models import (
+    Account,
+    AutonomyLevel,
+    Bar,
+    Fill,
+    Instrument,
+    Order,
+    Policy,
+    Position,
+    Watchlist,
+    WatchlistItem,
+)
 from app.schemas.trading import (
     AccountOut,
     OrderDetail,
