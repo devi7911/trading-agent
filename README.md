@@ -141,6 +141,11 @@ docker compose exec web npm install
 docker compose restart web
 ```
 
+And do not run a production build inside the `web` container: `ng build`
+writes `dist/` into the directory the dev server is watching, so vite rebuilds,
+which changes `dist/` again, and the page reloads in a loop until you delete
+it. Build in a scratch output directory, or stop `web` first.
+
 ### Running the agent
 
 ```powershell

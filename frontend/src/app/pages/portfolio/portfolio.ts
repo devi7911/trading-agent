@@ -1,7 +1,8 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { LiveService } from '../../core/live.service';
+import { pollWhileAlive } from '../../core/poll';
 import { TradingService } from '../../core/trading.service';
 import {
   OrderRow,
@@ -207,6 +208,7 @@ import { compact, money, pct, toneClass } from '../../shared/format';
 })
 export class PortfolioPage implements OnInit {
   private readonly trading = inject(TradingService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly live = inject(LiveService);
 
   readonly account = signal<TradingAccount | null>(null);
@@ -233,6 +235,13 @@ export class PortfolioPage implements OnInit {
   readonly tone = toneClass;
 
   ngOnInit(): void {
+    // The agent trades while this page is open, so a single fetch goes stale
+    // within seconds: cash moves on every fill, positions appear and close,
+    // and the order list grows. Only prices arrive over the stream.
+    pollWhileAlive(this.destroyRef, () => this.refresh());
+  }
+
+  refresh(): void {
     this.trading.account().subscribe({
       next: (a) => this.account.set(a),
       error: (err) =>
@@ -261,8 +270,8 @@ export class PortfolioPage implements OnInit {
     return cost ? (this.livePrice(p) / cost - 1) * 100 : 0;
   }
 
-  /** Equity revalued in the browser: cash never changes between ticks, only
-   *  the market value of what is held. */
+  /** Equity revalued in the browser between polls: cash is whatever the last
+   *  fetch returned, revalued against the live price of what is held. */
   liveEquity(a: TradingAccount): number {
     return this.num(a.cash) + this.liveInvested();
   }

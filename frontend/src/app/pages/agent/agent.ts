@@ -1,6 +1,7 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 
 import { TradingService } from '../../core/trading.service';
+import { pollWhileAlive } from '../../core/poll';
 import { AgentRunRow, DecisionRow, RiskCheck } from '../../core/models';
 import { pct, toneClass } from '../../shared/format';
 
@@ -113,9 +114,9 @@ import { pct, toneClass } from '../../shared/format';
           }
         </div>
         <div class="panel__body panel__body--flush">
-          @for (d of decisions(); track $index) {
+          @for (d of decisions(); track key(d)) {
             <article class="decision">
-              <div class="decision__head" (click)="toggle($index)">
+              <div class="decision__head" (click)="toggle(d)">
                 <span class="decision__sym">{{ d.symbol }}</span>
                 <span
                   class="pill"
@@ -127,10 +128,10 @@ import { pct, toneClass } from '../../shared/format';
                   conviction {{ d.conviction.toFixed(2) }}
                 </span>
                 <span class="decision__reason">{{ d.rationale }}</span>
-                <span class="muted mono">{{ expanded() === $index ? '▾' : '▸' }}</span>
+                <span class="muted mono">{{ expanded() === key(d) ? '▾' : '▸' }}</span>
               </div>
 
-              @if (expanded() === $index && d.risk_trace?.checks?.length) {
+              @if (expanded() === key(d) && d.risk_trace?.checks?.length) {
                 <div class="decision__trace">
                   <div class="muted mono decision__tracehead">Risk gate</div>
                   @for (c of d.risk_trace!.checks!; track c.check) {
@@ -241,11 +242,12 @@ import { pct, toneClass } from '../../shared/format';
 })
 export class AgentPage implements OnInit {
   private readonly trading = inject(TradingService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly runs = signal<AgentRunRow[]>([]);
   readonly decisions = signal<DecisionRow[]>([]);
   readonly selectedRun = signal<string | null>(null);
-  readonly expanded = signal<number | null>(null);
+  readonly expanded = signal<string | null>(null);
   readonly halted = signal(false);
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
@@ -255,7 +257,9 @@ export class AgentPage implements OnInit {
   readonly tone = toneClass;
 
   ngOnInit(): void {
-    this.refresh();
+    // New runs and decisions land every tick; a page opened once and left open
+    // would otherwise show whatever the agent was doing when it was opened.
+    pollWhileAlive(this.destroyRef, () => this.refresh());
   }
 
   refresh(): void {
@@ -263,7 +267,12 @@ export class AgentPage implements OnInit {
       next: (r) => this.runs.set(r),
       error: (err) => this.error.set(err?.error?.detail ?? 'Could not load agent runs.'),
     });
-    this.trading.decisions().subscribe({ next: (d) => this.decisions.set(d) });
+    // Polling must not yank a run out from under someone reading it: while a
+    // run is open, keep refreshing that run rather than replacing the list
+    // with the latest decisions.
+    const run = this.selectedRun();
+    const decisions = run ? this.trading.runDecisions(run) : this.trading.decisions();
+    decisions.subscribe({ next: (d) => this.decisions.set(d) });
     this.trading.haltStatus().subscribe({ next: (h) => this.halted.set(h.halted) });
   }
 
@@ -279,8 +288,16 @@ export class AgentPage implements OnInit {
     this.trading.decisions().subscribe({ next: (d) => this.decisions.set(d) });
   }
 
-  toggle(index: number): void {
-    this.expanded.set(this.expanded() === index ? null : index);
+  /** A stable identity for a decision. Rows are keyed by this rather than by
+   *  position, so a poll that prepends a newer decision does not slide the
+   *  open risk trace onto a different row. */
+  key(d: DecisionRow): string {
+    return `${d.at ?? ''}|${d.symbol}|${d.direction}`;
+  }
+
+  toggle(d: DecisionRow): void {
+    const k = this.key(d);
+    this.expanded.set(this.expanded() === k ? null : k);
   }
 
   quantity(d: DecisionRow): number {
