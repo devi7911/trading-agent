@@ -10,6 +10,12 @@ from app.models.fill import Fill
 from app.models.instrument import Instrument
 from app.models.market_snapshot import MarketSnapshot
 from app.models.news import NewsItem
+from app.models.notification import (
+    Channel,
+    DeliveryStatus,
+    Notification,
+    Severity,
+)
 from app.models.order import (
     ALLOWED_TRANSITIONS,
     TERMINAL_STATUSES,
@@ -37,11 +43,14 @@ __all__ = [
     "Bar",
     "Base",
     "BracketRole",
+    "Channel",
     "CorporateEvent",
+    "DeliveryStatus",
     "Fill",
     "Instrument",
     "MarketSnapshot",
     "NewsItem",
+    "Notification",
     "Order",
     "OrderStatus",
     "OrderType",
@@ -51,6 +60,7 @@ __all__ = [
     "RiskProfile",
     "RunStatus",
     "RunTrigger",
+    "Severity",
     "Side",
     "TimeInForce",
     "User",

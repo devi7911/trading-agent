@@ -38,6 +38,7 @@ from app.models import (
     Watchlist,
     WatchlistItem,
 )
+from app.notify.service import notify
 from app.reasoning.llm import LLMClient
 from app.reasoning.reasoner import review
 from app.risk import gate
@@ -210,6 +211,7 @@ async def run_tick(
 
             if decision.approved:
                 run.orders_placed += 1
+                await _announce(session, user, decision, instrument)
                 trades_today += 1
                 symbol_trades[instrument.id] = symbol_trades.get(instrument.id, 0) + 1
                 seen_keys.add(_intent_key(run.id, decision.symbol, decision.direction))
@@ -246,6 +248,31 @@ async def run_tick(
         ms=run.duration_ms,
     )
     return run
+
+
+async def _announce(
+    session: AsyncSession, user: User, decision: AgentDecision, instrument: Instrument
+) -> None:
+    """Tell the user what just happened. Never let a notification failure
+    abort a tick that has already traded."""
+    try:
+        is_exit = "Stop loss" in decision.rationale or "Take profit" in decision.rationale
+        event = "stop.triggered" if "Stop loss" in decision.rationale else (
+            "target.hit" if "Take profit" in decision.rationale else "trade.executed"
+        )
+        verb = decision.direction.upper()
+        await notify(
+            session, user,
+            event=event,
+            title=f"{verb} {decision.approved_quantity} {decision.symbol}",
+            body=(f"{instrument.name}\n{decision.rationale}"
+                  + ("" if not is_exit else "\n\nPosition closed by a risk rule.")),
+            dedupe_key=f"{decision.symbol}:{decision.direction}",
+            payload={"symbol": decision.symbol, "quantity": decision.approved_quantity,
+                     "conviction": decision.conviction},
+        )
+    except Exception as exc:
+        log.info("notify_failed", symbol=decision.symbol, error=type(exc).__name__)
 
 
 async def _recent_headlines(

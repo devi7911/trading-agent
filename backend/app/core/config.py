@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     redis_host: str = "redis"
     redis_port: int = 6379
 
+    # --- notifications (phase 07) ---
+    # Blank means notifications are recorded but never pushed.
+    telegram_bot_token: str = ""
+
     # --- reasoning layer (phase 08) ---
     # Off by default: the agent must work without a model, and the model is an
     # optional reviewer rather than a dependency.

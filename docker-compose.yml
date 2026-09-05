@@ -83,6 +83,24 @@ services:
     command: ["python", "-m", "app.agent.worker"]
     restart: unless-stopped
 
+  bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: ta-bot
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+    volumes:
+      - ./backend:/app
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["python", "-m", "app.notify.bot"]
+    restart: unless-stopped
+
   web:
     build:
       context: ./frontend

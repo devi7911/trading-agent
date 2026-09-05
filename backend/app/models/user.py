@@ -22,6 +22,7 @@ class User(Base, UUIDMixin, TimestampMixin):
 
     # phase 07 - linked when the user connects the Telegram bot
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    telegram_link_token: Mapped[str | None] = mapped_column(String(64), unique=True)
 
     accounts: Mapped[list["Account"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
