@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     redis_host: str = "redis"
     redis_port: int = 6379
 
+    # --- alpaca paper (phase 10) ---
+    alpaca_api_key: str = ""
+    alpaca_api_secret: str = ""
+    alpaca_base_url: str = "https://paper-api.alpaca.markets"
+
     # --- notifications (phase 07) ---
     # Blank means notifications are recorded but never pushed.
     telegram_bot_token: str = ""

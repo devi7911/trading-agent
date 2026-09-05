@@ -1,11 +1,12 @@
 """Liveness and readiness. Compose and Prometheus both watch these."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from redis.asyncio import Redis
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
+from app.core import metrics
 from app.core.config import settings
-from app.core.db import engine
+from app.core.db import SessionLocal, engine
 from app.schemas.common import HealthStatus
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -42,3 +43,39 @@ async def ready() -> HealthStatus:
 
     status = "ok" if all(v == "ok" for v in checks.values()) else "degraded"
     return HealthStatus(status=status, version=VERSION, checks=checks)
+
+
+@router.get("/metrics", include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Prometheus scrape target.
+
+    The gauge that matters is agent staleness: every other signal can look
+    healthy while the loop has quietly stopped, and that is the failure you
+    discover a week later.
+    """
+    from datetime import UTC, datetime
+
+    from app.models import AgentRun, Order, Position
+
+    async with SessionLocal() as session:
+        last_run = await session.scalar(select(func.max(AgentRun.started_at)))
+        staleness = (
+            (datetime.now(UTC) - last_run).total_seconds() if last_run else -1.0
+        )
+        metrics.gauge("agent_seconds_since_last_tick", staleness)
+        metrics.gauge(
+            "agent_runs_total", float(await session.scalar(select(func.count(AgentRun.id))) or 0)
+        )
+        metrics.gauge(
+            "trading_orders_total", float(await session.scalar(select(func.count(Order.id))) or 0)
+        )
+        metrics.gauge(
+            "trading_open_positions",
+            float(
+                await session.scalar(
+                    select(func.count(Position.id)).where(Position.quantity != 0)
+                ) or 0
+            ),
+        )
+
+    return Response(content=metrics.render(), media_type="text/plain; version=0.0.4")

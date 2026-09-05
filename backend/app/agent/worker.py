@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from app.agent.clock import market_clock
 from app.agent.loop import run_tick
+from app.agent.reconcile import reconcile_all
 from app.core.config import settings
 from app.core.db import SessionLocal, engine
 from app.core.logging import configure_logging, correlation_id, get_logger
@@ -87,6 +88,10 @@ async def tick_all_users(*, trigger: RunTrigger = RunTrigger.SCHEDULED) -> int:
                         session, user, trigger=trigger, global_halt=halted, now=clock
                     )
                     ticked += 1
+
+                # Verify the ledger every cycle. An agent trading on a wrong
+                # balance compounds the error with every order it places.
+                await reconcile_all(session)
                 await session.commit()
     finally:
         await redis.aclose()
