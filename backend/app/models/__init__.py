@@ -1,6 +1,7 @@
 """Import every model here so Alembic autogenerate sees the full metadata."""
 
 from app.models.account import Account
+from app.models.agent_run import AgentDecision, AgentRun, RunStatus, RunTrigger
 from app.models.audit import AuditLog
 from app.models.bar import Bar
 from app.models.base import Base
@@ -29,6 +30,8 @@ __all__ = [
     "ALLOWED_TRANSITIONS",
     "TERMINAL_STATUSES",
     "Account",
+    "AgentDecision",
+    "AgentRun",
     "AuditLog",
     "AutonomyLevel",
     "Bar",
@@ -46,6 +49,8 @@ __all__ = [
     "Position",
     "RejectReason",
     "RiskProfile",
+    "RunStatus",
+    "RunTrigger",
     "Side",
     "TimeInForce",
     "User",

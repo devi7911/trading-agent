@@ -13,24 +13,24 @@ The full architecture and the ten-phase plan live in [`docs/`](./docs/).
 
 ## Where this is
 
-**Phase 01 — market data spine, plus a market terminal.** A complete synthetic
-market: 60 fictional companies across 9 sectors, six years of daily bars, a news
-wire and corporate events, all reproducible from a single seed. Browsable in the
-app with charts, sector performance, movers and exports. No agent and no orders
-yet.
+**Phase 05 — the agent trades on its own.** A synthetic market, a simulated
+exchange with a reconcilable ledger, rule-based strategies, a risk gate that can
+only shrink or refuse, and a loop that runs unattended in its own container.
+
+Nothing here touches real money and nothing here ever will.
 
 | Phase | What | Status |
 | ----- | ---- | ------ |
 | 00 | Foundation: compose, schema, auth, health | ✅ done |
 | 01 | Market data spine: synthetic universe | ✅ done |
-| 02 | Simulated exchange: matching engine, order lifecycle | next |
-| 03 | Rule-based strategy engine | |
-| 04 | Risk gate | |
-| 05 | Agent orchestrator (the loop) | |
-| 06 | Angular dashboard | |
-| 07 | Telegram notifications | |
+| 02 | Simulated exchange: matching engine, order lifecycle | ✅ done |
+| 03 | Rule-based strategy engine | ✅ done |
+| 04 | Risk gate | ✅ done |
+| 05 | Agent orchestrator (the loop) | ✅ done |
+| 06 | Angular dashboard | 🟡 market terminal built |
+| 07 | Telegram notifications | 🟡 digest generator |
 | 08 | LLM reasoning layer | |
-| 09 | Backtest & validation harness | |
+| 09 | Backtest & validation harness | 🟡 analytics and reports |
 | 10 | Hardening & Alpaca paper swap | |
 
 ---
@@ -136,6 +136,55 @@ docker compose exec web npm install
 docker compose restart web
 ```
 
+### Running the agent
+
+```powershell
+# give a user a watchlist and let the agent act
+docker compose exec api python -m app.cli setup-agent --email you@example.com --count 12
+docker compose exec api python -m app.cli tick --email you@example.com
+
+# evaluate everything, place nothing
+docker compose exec api python -m app.cli tick --email you@example.com --dry-run
+```
+
+The `agent` container ticks every 15 minutes on its own. It holds a Redis lock,
+so starting two of them by accident is harmless.
+
+**The kill switch lives outside the agent**, in Redis, so it works even when the
+loop is wedged:
+
+```
+POST   /api/v1/agent/halt      engage
+DELETE /api/v1/agent/halt      release
+GET    /api/v1/agent/halt      status
+```
+
+### How a decision is made
+
+```
+perceive -> enrich -> recall -> reason -> GATE -> execute -> observe -> report
+```
+
+The gate is the part that matters. It is a pure function of (Intent,
+RiskContext) — no database, no clock, no network, and no language model. It can
+shrink an order to fit a cap, or refuse it with a reason code, and it can never
+make one bigger. Every verdict is stored with its full check trace, so any
+decision can be explained months later:
+
+```powershell
+curl /api/v1/agent/runs                     # every tick
+curl /api/v1/agent/runs/{id}/decisions      # every symbol considered, and why
+curl /api/v1/trading/reconcile              # rebuild cash and positions from fills
+```
+
+### Two clocks
+
+Wall time and market time are not the same thing, and conflating them is a bug.
+With daily bars they differ by up to three days over a weekend. In simulation
+the **market clock** is authoritative: the agent runs mid-session on the day of
+the most recent bar, and staleness is measured in trading sessions rather than
+seconds — a Friday close is not stale on Monday morning.
+
 ### Phase 01 acceptance
 
 1. `seed-market` loads ~90k bars for 60 instruments without error.
@@ -161,8 +210,12 @@ docker compose down -v             # stop and wipe the volumes
 ```
 backend/
   app/
+    agent/       the loop, market clock, context builder, worker
     core/        config, logging, db, security
+    execution/   broker port, matching engine, order lifecycle
     market/      calendar, provider port, synthetic generator, ingestion
+    risk/        the gate and its types
+    strategy/    indicators, signals, strategies
     models/      SQLAlchemy models (the schema is the contract)
     schemas/     Pydantic request/response models
     api/v1/      routers
@@ -186,6 +239,11 @@ docs/            architecture and phase plan
   the exact policy that governed it.
 - `SYSTEM_CEILINGS` in `app/models/policy.py` caps what any user policy may allow.
 - `audit_log` is append-only and sufficient to reconstruct account state from zero.
+- Autonomy starts at `observe`: the agent logs what it would do and places nothing.
+- Fills are the only thing that moves cash or position; positions are derived and
+  never edited, so the ledger can always be rebuilt and compared.
+- The risk gate has property-based test coverage: no generated input has been
+  able to talk it past a cap.
 
 ## A note on scope
 

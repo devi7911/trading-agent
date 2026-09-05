@@ -80,11 +80,12 @@ def evaluate(intent: Intent, ctx: RiskContext) -> Verdict:
     if ctx.price <= 0:
         return _deny(checks, "freshness", Denial.STALE_DATA,
                      f"No usable price for {intent.symbol}.")
-    if ctx.price_age_seconds > ctx.max_price_age_seconds:
+    if ctx.sessions_stale > ctx.max_sessions_stale:
         return _deny(checks, "freshness", Denial.STALE_DATA,
-                     f"Price is {ctx.price_age_seconds / 3600:.1f}h old; the limit is "
-                     f"{ctx.max_price_age_seconds / 3600:.1f}h.")
-    _pass(checks, "freshness", f"Price {ctx.price} is fresh enough.")
+                     f"The last bar is {ctx.sessions_stale} sessions old; the limit "
+                     f"is {ctx.max_sessions_stale}.")
+    _pass(checks, "freshness",
+          f"Price {ctx.price} is from {ctx.sessions_stale} session(s) ago.")
 
     # --- 5. session ----------------------------------------------------------
     if not ctx.market_open:

@@ -135,5 +135,159 @@ def digest_cmd() -> None:
     asyncio.run(run())
 
 
+@app.command("setup-agent")
+def setup_agent_cmd(
+    email: str = typer.Option(..., help="Which user to set up."),
+    symbols: str = typer.Option("", help="Comma-separated symbols. Blank picks a spread."),
+    count: int = typer.Option(12, help="How many symbols to pick when none are named."),
+    autonomy: str = typer.Option("full_auto", help="observe | approve | auto_capped | full_auto"),
+) -> None:
+    """Fill a user's watchlist and set their autonomy level, so the agent has
+    something to work with."""
+    configure_logging("WARNING", json_output=False)
+
+    async def run() -> None:
+        from sqlalchemy import select
+
+        from app.models import AutonomyLevel, Instrument, Policy, User, Watchlist, WatchlistItem
+
+        async with SessionLocal() as session:
+            user = (
+                await session.execute(select(User).where(User.email == email.lower()))
+            ).scalar_one_or_none()
+            if user is None:
+                typer.echo(f"No user with email {email}.")
+                return
+
+            watchlist = (
+                await session.execute(
+                    select(Watchlist).where(Watchlist.user_id == user.id).limit(1)
+                )
+            ).scalar_one_or_none()
+            if watchlist is None:
+                watchlist = Watchlist(user_id=user.id, name="My list", is_default=True)
+                session.add(watchlist)
+                await session.flush()
+
+            if symbols.strip():
+                wanted = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+                stmt = select(Instrument).where(Instrument.symbol.in_(wanted))
+            else:
+                # A spread across sectors rather than the first N alphabetically,
+                # so concentration limits actually get exercised.
+                stmt = (
+                    select(Instrument)
+                    .where(Instrument.is_tradable.is_(True))
+                    .order_by(Instrument.sector, Instrument.symbol)
+                    .limit(count)
+                )
+            instruments = list((await session.execute(stmt)).scalars())
+
+            existing = {
+                i for i in (
+                    await session.execute(
+                        select(WatchlistItem.instrument_id).where(
+                            WatchlistItem.watchlist_id == watchlist.id
+                        )
+                    )
+                ).scalars()
+            }
+            added = 0
+            for i, instrument in enumerate(instruments):
+                if instrument.id in existing:
+                    continue
+                session.add(
+                    WatchlistItem(
+                        watchlist_id=watchlist.id,
+                        instrument_id=instrument.id,
+                        conviction=(i % 3) + 1,
+                        is_favourite=i % 4 == 0,
+                    )
+                )
+                added += 1
+
+            policy = (
+                await session.execute(
+                    select(Policy)
+                    .where(Policy.user_id == user.id, Policy.is_active.is_(True))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if policy is not None:
+                policy.autonomy_level = AutonomyLevel(autonomy)
+
+            await session.commit()
+            typer.echo(f"  watchlist      {added} added, {len(instruments)} total considered")
+            typer.echo(f"  autonomy       {autonomy}")
+            typer.echo("  symbols        " + ", ".join(i.symbol for i in instruments))
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
+@app.command("tick")
+def tick_cmd(
+    email: str = typer.Option(..., help="Which user's agent to run."),
+    dry_run: bool = typer.Option(False, help="Evaluate everything, place nothing."),
+) -> None:
+    """Run one pass of the agent loop and print what it decided."""
+    configure_logging(settings.log_level, json_output=False)
+
+    async def run() -> None:
+        from sqlalchemy import select
+
+        from app.agent.clock import market_clock
+        from app.agent.loop import run_tick
+        from app.models import AgentDecision, RunTrigger, User
+
+        async with SessionLocal() as session:
+            user = (
+                await session.execute(select(User).where(User.email == email.lower()))
+            ).scalar_one_or_none()
+            if user is None:
+                typer.echo(f"No user with email {email}.")
+                return
+
+            clock = await market_clock(session)
+            run_row = await run_tick(
+                session, user, trigger=RunTrigger.MANUAL, dry_run=dry_run, now=clock
+            )
+            typer.echo(f"  market clock   {clock:%Y-%m-%d %H:%M} UTC")
+            await session.commit()
+
+            typer.echo("")
+            typer.echo(f"  status         {run_row.status}")
+            typer.echo(f"  symbols        {run_row.symbols_examined}")
+            typer.echo(f"  intents        {run_row.intents_formed}")
+            typer.echo(f"  orders placed  {run_row.orders_placed}")
+            typer.echo(f"  denials        {run_row.denials}")
+            typer.echo(f"  duration       {run_row.duration_ms} ms")
+            if run_row.error:
+                typer.echo(f"  error          {run_row.error}")
+
+            decisions = list(
+                (
+                    await session.execute(
+                        select(AgentDecision)
+                        .where(AgentDecision.run_id == run_row.id)
+                        .order_by(AgentDecision.approved.desc(), AgentDecision.symbol)
+                        .limit(20)
+                    )
+                ).scalars()
+            )
+            if decisions:
+                typer.echo("")
+                for d in decisions:
+                    mark = "OK " if d.approved else "-- "
+                    detail = d.denial or d.rationale[:64]
+                    typer.echo(
+                        f"  {mark}{d.symbol:<6} {d.direction:<5} "
+                        f"{d.approved_quantity:>5}  {detail}"
+                    )
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     app()

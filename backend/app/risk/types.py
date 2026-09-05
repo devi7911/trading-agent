@@ -99,7 +99,6 @@ class RiskContext:
     minutes_to_close: float
 
     price: Decimal
-    price_age_seconds: float
     symbol_known: bool
     sector: str | None
 
@@ -128,7 +127,10 @@ class RiskContext:
     max_trades_per_day: int
     max_trades_per_symbol_per_day: int
 
-    max_price_age_seconds: float = 90_000.0   # daily bars: a bit over a day
+    # Staleness is counted in TRADING SESSIONS, not seconds. A Friday close is
+    # not stale on Monday morning, however many hours have elapsed.
+    sessions_stale: int = 0
+    max_sessions_stale: int = 1
     session_edge_minutes: float = 5.0
 
 
