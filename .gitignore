@@ -38,5 +38,5 @@ Desktop.ini
 .eggs/
 
 # local build output
-build*.log
+*.log
 rebuild.log
