@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -28,7 +29,10 @@ log = get_logger("agent.worker")
 LOCK_KEY = "agent:tick:lock"
 LOCK_TTL_SECONDS = 300
 HALT_KEY = "agent:halt"
-TICK_INTERVAL_SECONDS = 900  # every 15 minutes
+# The simulated session is compressed (a few minutes of real time), so the agent
+# ticks far more often than it would against a real market. Configurable so a
+# real deployment can slow it back down.
+TICK_INTERVAL_SECONDS = int(os.getenv("AGENT_TICK_SECONDS", "60"))
 
 
 @contextlib.asynccontextmanager

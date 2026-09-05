@@ -1,11 +1,16 @@
+import asyncio
+import json
+from collections.abc import AsyncGenerator
 from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from redis.asyncio import Redis
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
+from app.market.live import CHANNEL, CLOCK_KEY
 from app.market.service import QUOTE_KEY
 from app.models import Bar, CorporateEvent, Instrument, NewsItem
 from app.schemas.market import (
@@ -159,3 +164,69 @@ async def list_sectors(session: SessionDep, _user: CurrentUser) -> list[str]:
         .order_by(Instrument.sector)
     )
     return [s for s in (await session.execute(stmt)).scalars() if s]
+
+
+# --- the live stream --------------------------------------------------------
+#
+# Deliberately UNAUTHENTICATED, and deliberately carrying market prices only.
+#
+# EventSource cannot send an Authorization header, and the alternative - putting
+# a bearer token in the query string - writes a credential into browser history,
+# proxy logs and the server access log. Since this endpoint exposes nothing but
+# quotes for a fictional market, the safe answer is to carry no account data at
+# all: positions and equity are fetched over the authenticated API and revalued
+# in the browser from these prices.
+
+HEARTBEAT_SECONDS = 20.0
+
+
+@router.get("/clock")
+async def market_clock_state() -> dict:
+    """Where the simulated session has got to."""
+    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        raw = await redis.get(CLOCK_KEY)
+    finally:
+        await redis.aclose()
+    if not raw:
+        return {"running": False, "note": "The market ticker is not running."}
+    state = json.loads(raw)
+    state["running"] = True
+    return state
+
+
+async def _quote_events() -> AsyncGenerator[str, None]:
+    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(CHANNEL)
+    try:
+        yield ": connected\n\n"
+        while True:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=HEARTBEAT_SECONDS
+            )
+            if message is None:
+                # Comment frames keep proxies from closing an idle connection.
+                yield ": keep-alive\n\n"
+                continue
+            yield f"data: {message['data']}\n\n"
+    except asyncio.CancelledError:  # the client went away
+        raise
+    finally:
+        await pubsub.unsubscribe(CHANNEL)
+        await pubsub.aclose()
+        await redis.aclose()
+
+
+@router.get("/stream")
+async def stream_quotes() -> StreamingResponse:
+    """Server-sent events carrying live quotes for the simulated market."""
+    return StreamingResponse(
+        _quote_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

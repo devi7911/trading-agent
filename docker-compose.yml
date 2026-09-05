@@ -65,6 +65,24 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  ticker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: ta-ticker
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+    volumes:
+      - ./backend:/app
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["python", "-m", "app.market.ticker"]
+    restart: unless-stopped
+
   agent:
     build:
       context: ./backend

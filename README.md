@@ -58,6 +58,7 @@ docker compose up --build
 | Web app | http://localhost:4200 |
 | Market terminal | http://localhost:4200/market |
 | Metrics (Prometheus) | http://localhost:8000/api/v1/health/metrics |
+| Live quote stream | http://localhost:8000/api/v1/market/stream |
 | API docs | http://localhost:8000/docs |
 | Readiness | http://localhost:8000/api/v1/health/ready |
 | Postgres | localhost:5432 |
@@ -230,6 +231,31 @@ of the chat can make the system safer, never bolder.
 
 Without a token the bot idles and notifications are still recorded and visible in
 the app. The agent never learns whether push is configured.
+
+### The live market
+
+A `ticker` container keeps the simulated market moving. It advances a session
+clock, generates intraday prices from each instrument's own volatility, and when
+a session finishes writes it as a new daily bar and opens the next one — so
+history keeps growing and the agent always has a fresh session to trade.
+
+Time is compressed: **one real second is three simulated minutes**, so a
+390-minute session plays out in a little over two minutes. The dashboard
+subscribes over server-sent events and revalues positions and equity as prices
+move, with no refresh.
+
+```powershell
+docker compose logs -f ticker                    # watch sessions open and close
+curl http://localhost:8000/api/v1/market/clock   # where the session has got to
+docker compose exec redis redis-cli set market:ticker:paused 1   # freeze it
+docker compose exec redis redis-cli del market:ticker:paused     # resume
+```
+
+The stream endpoint is **unauthenticated on purpose** and carries market prices
+only. `EventSource` cannot send an `Authorization` header, and the usual
+workaround — a bearer token in the query string — writes a credential into
+browser history and proxy logs. Account data stays on the authenticated API and
+is revalued in the browser from these prices.
 
 ### Two clocks
 
