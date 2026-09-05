@@ -41,6 +41,10 @@ def seed_market_cmd(
         )
         async with SessionLocal() as session:
             stats = await seed_market(session, provider, start_date, end_date)
+            typer.echo("Building analytics...")
+            from app.market.analytics import rebuild_snapshots
+
+            stats["snapshots"] = await rebuild_snapshots(session)
             await session.commit()
         for k, v in stats.items():
             typer.echo(f"  {k:<14} {v:>9,}")
@@ -74,6 +78,58 @@ def market_stats_cmd() -> None:
             lo, hi = span.one()
             if lo:
                 typer.echo(f"  span           {lo.date()} to {hi.date()}")
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
+@app.command("rebuild-analytics")
+def rebuild_analytics_cmd() -> None:
+    """Recompute the market index and breadth from the stored bars."""
+    configure_logging(settings.log_level, json_output=False)
+
+    async def run() -> None:
+        from app.market.analytics import rebuild_snapshots
+
+        async with SessionLocal() as session:
+            n = await rebuild_snapshots(session)
+            await session.commit()
+        typer.echo(f"  snapshots      {n:>9,}")
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
+@app.command("digest")
+def digest_cmd() -> None:
+    """Print today's market digest - the text phase 07 will send to Telegram."""
+    configure_logging("WARNING", json_output=False)
+
+    async def run() -> None:
+        from sqlalchemy import select
+
+        from app.market.analytics import load_panel
+        from app.market.reporting import build_digest
+        from app.models import MarketSnapshot
+
+        async with SessionLocal() as session:
+            latest = await session.scalar(
+                select(MarketSnapshot).order_by(MarketSnapshot.ts.desc()).limit(1)
+            )
+            if latest is None:
+                typer.echo("No analytics built yet. Run rebuild-analytics first.")
+                return
+            panel = await load_panel(session)
+            d = build_digest(panel, {
+                "index_value": latest.index_value,
+                "index_return": latest.index_return,
+                "regime": latest.regime,
+                "advancers": latest.advancers,
+                "decliners": latest.decliners,
+            })
+            typer.echo("")
+            typer.echo(d.to_text())
+            typer.echo("")
         await engine.dispose()
 
     asyncio.run(run())

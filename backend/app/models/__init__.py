@@ -6,6 +6,7 @@ from app.models.bar import Bar
 from app.models.base import Base
 from app.models.corporate_event import CorporateEvent
 from app.models.instrument import Instrument
+from app.models.market_snapshot import MarketSnapshot
 from app.models.news import NewsItem
 from app.models.policy import AutonomyLevel, Policy, RiskProfile
 from app.models.user import User
@@ -19,6 +20,7 @@ __all__ = [
     "Base",
     "CorporateEvent",
     "Instrument",
+    "MarketSnapshot",
     "NewsItem",
     "Policy",
     "RiskProfile",
