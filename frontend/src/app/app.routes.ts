@@ -3,7 +3,6 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/auth.guard';
 
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
   {
     path: 'login',
     title: 'Sign in',
@@ -15,10 +14,28 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/signup/signup').then((m) => m.SignupPage),
   },
   {
-    path: 'dashboard',
-    title: 'Dashboard',
+    path: '',
     canActivate: [authGuard],
-    loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.DashboardPage),
+    loadComponent: () => import('./shared/shell').then((m) => m.Shell),
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'market' },
+      {
+        path: 'market',
+        title: 'Market',
+        loadComponent: () => import('./pages/market/market').then((m) => m.MarketPage),
+      },
+      {
+        path: 'instrument/:symbol',
+        title: 'Instrument',
+        loadComponent: () =>
+          import('./pages/instrument/instrument').then((m) => m.InstrumentPage),
+      },
+      {
+        path: 'dashboard',
+        title: 'Account',
+        loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.DashboardPage),
+      },
+    ],
   },
-  { path: '**', redirectTo: 'dashboard' },
+  { path: '**', redirectTo: '' },
 ];

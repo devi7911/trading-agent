@@ -7,20 +7,17 @@ import { HealthStatus } from '../../core/models';
 @Component({
   selector: 'app-dashboard',
   template: `
-    <main style="max-width:900px;margin:0 auto;padding:40px 24px">
-      <header
-        style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:32px"
-      >
+    <main class="page">
+      <div class="page__head">
         <div>
           <h1 style="margin-bottom:4px">
-            {{ auth.currentUser()?.display_name || 'Welcome' }}
+            {{ auth.currentUser()?.display_name || 'Account' }}
           </h1>
           <p class="muted" style="margin:0">{{ auth.currentUser()?.email }}</p>
         </div>
-        <button class="ghost" type="button" (click)="auth.logout()">Sign out</button>
-      </header>
+      </div>
 
-      <section class="card" style="margin-bottom:20px">
+      <section class="panel" style="margin-bottom:14px"><div class="panel__body">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:16px">
           <h2 style="margin:0">System status</h2>
           @if (health(); as h) {
@@ -52,18 +49,19 @@ import { HealthStatus } from '../../core/models';
         } @else {
           <p class="muted" style="margin:16px 0 0">Checking…</p>
         }
-      </section>
+      </div></section>
 
-      <section class="card">
-        <h2>Phase 00 complete</h2>
+      <section class="panel"><div class="panel__body">
+        <h2>Where this is</h2>
         <p class="muted">
-          Auth, database, migrations, Redis and health checks are wired up. There is no agent yet
-          and nothing is trading — that starts with the market data spine in phase 01.
+          Auth, database, market data and analytics are wired up. There is no agent yet
+          and nothing is trading.
         </p>
         <p class="muted" style="margin:0">
-          Next: synthetic universe generator, seeded price paths, and bars flowing into TimescaleDB.
+          A full synthetic market is loaded and browsable. Next is the simulated
+          exchange: matching engine, order lifecycle, and positions derived from fills.
         </p>
-      </section>
+      </div></section>
     </main>
   `,
 })

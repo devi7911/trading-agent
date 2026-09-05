@@ -13,9 +13,11 @@ The full architecture and the ten-phase plan live in [`docs/`](./docs/).
 
 ## Where this is
 
-**Phase 01 — market data spine.** A complete synthetic market: 60 fictional
-companies across 9 sectors, six years of daily bars, a news wire and corporate
-events, all reproducible from a single seed. No agent and no orders yet.
+**Phase 01 — market data spine, plus a market terminal.** A complete synthetic
+market: 60 fictional companies across 9 sectors, six years of daily bars, a news
+wire and corporate events, all reproducible from a single seed. Browsable in the
+app with charts, sector performance, movers and exports. No agent and no orders
+yet.
 
 | Phase | What | Status |
 | ----- | ---- | ------ |
@@ -51,6 +53,7 @@ docker compose up --build
 | Service | URL |
 | ------- | --- |
 | Web app | http://localhost:4200 |
+| Market terminal | http://localhost:4200/market |
 | API docs | http://localhost:8000/docs |
 | Readiness | http://localhost:8000/api/v1/health/ready |
 | Postgres | localhost:5432 |
@@ -105,12 +108,41 @@ return = drift + beta x market + load x sector + idiosyncratic
 3. You can create an account at http://localhost:4200/signup and land on the dashboard.
 4. `docker compose exec api pytest` passes.
 
+### The market terminal
+
+Sign in and go to **/market**:
+
+- **Overview** — cap-weighted index chart, breadth, sector performance over
+  1D/1W/1M/3M/YTD/1Y, gainers, losers and most active by relative volume.
+- **Instrument detail** — candlestick chart with volume, selectable range,
+  risk stats, headlines with sentiment, and earnings history.
+- **Exports** — Excel workbook and universe CSV from the overview; bar CSV and
+  a PDF tearsheet from any instrument.
+
+```powershell
+docker compose exec api python -m app.cli digest   # the daily market summary
+```
+
+That digest text is what phase 07 will send to Telegram.
+
+### A compose gotcha, once
+
+`node_modules` lives in a named volume for speed, which means a newly added npm
+package is invisible to the running container even after a rebuild — the volume
+shadows the image. After adding a frontend dependency:
+
+```powershell
+docker compose exec web npm install
+docker compose restart web
+```
+
 ### Phase 01 acceptance
 
 1. `seed-market` loads ~90k bars for 60 instruments without error.
 2. Running it a second time changes no row counts and no prices.
 3. `GET /api/v1/market/instruments/{symbol}/bars` returns plausible OHLCV.
-4. A chart of a synthetic stock is indistinguishable from a real one.
+4. A chart of a synthetic stock is indistinguishable from a real one — check it
+   yourself at `/instrument/<symbol>`.
 
 ## Common commands
 
@@ -139,8 +171,9 @@ backend/
   tests/
 frontend/
   src/app/
-    core/        auth service, interceptor, guard, models
-    pages/       login, signup, dashboard
+    core/        auth service, interceptor, guard, market service, models
+    pages/       login, signup, dashboard, market, instrument
+    shared/      app shell, chart theming, formatting helpers
 infra/           database init
 docs/            architecture and phase plan
 ```
