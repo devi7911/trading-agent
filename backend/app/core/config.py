@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     redis_host: str = "redis"
     redis_port: int = 6379
 
+    # --- reasoning layer (phase 08) ---
+    # Off by default: the agent must work without a model, and the model is an
+    # optional reviewer rather than a dependency.
+    llm_enabled: bool = False
+    llm_base_url: str = "http://host.docker.internal:11434"
+    llm_model: str = "llama3.2:1b"
+
     # --- execution ---
     broker: Literal["sim", "alpaca_paper"] = "sim"
     allow_live_trading: bool = False

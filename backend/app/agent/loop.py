@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.context import build_context, collect_shared, load_series
+from app.core.config import settings
 from app.core.logging import correlation_id, get_logger
 from app.execution import service as execution
 from app.execution.port import OrderRequest
@@ -37,6 +38,8 @@ from app.models import (
     Watchlist,
     WatchlistItem,
 )
+from app.reasoning.llm import LLMClient
+from app.reasoning.reasoner import review
 from app.risk import gate
 from app.risk.types import Intent, Verdict
 from app.strategy.signals import Direction
@@ -127,6 +130,7 @@ async def run_tick(
     global_halt: bool = False,
     now: datetime | None = None,
     dry_run: bool = False,
+    use_reviewer: bool = False,
 ) -> AgentRun:
     """One pass of the loop. Always returns a persisted AgentRun, even on failure."""
     now = now or datetime.now(UTC)
@@ -174,6 +178,17 @@ async def run_tick(
         )
         seen_keys: set[str] = set()
 
+        # The reviewer is optional and checked once per tick, not per symbol: a
+        # model that is down should cost one probe, not one per instrument.
+        reviewer: LLMClient | None = None
+        if settings.llm_enabled and (trigger is not RunTrigger.BACKTEST or use_reviewer):
+            candidate = LLMClient()
+            if await candidate.available():
+                reviewer = candidate
+            else:
+                log.info("llm_skipped", reason="model unavailable",
+                         model=candidate.model)
+
         for instrument, tier in symbols:
             try:
                 decision = await _consider(
@@ -181,7 +196,7 @@ async def run_tick(
                     now=now, global_halt=global_halt, sector_exposure=exposure,
                     trades_today=trades_today, symbol_trades=symbol_trades,
                     seen_keys=frozenset(seen_keys), dry_run=dry_run,
-                    day_start_equity=day_start,
+                    day_start_equity=day_start, reviewer=reviewer,
                 )
             except Exception as exc:
                 # One bad symbol must not abandon the rest of the tick.
@@ -233,6 +248,30 @@ async def run_tick(
     return run
 
 
+async def _recent_headlines(
+    session: AsyncSession, instrument_id: uuid.UUID, as_of: datetime, limit: int = 6
+) -> list[dict]:
+    """Headlines published on or before `as_of` - never tomorrow's news."""
+    from app.models import NewsItem
+
+    rows = list(
+        (
+            await session.execute(
+                select(NewsItem)
+                .where(NewsItem.instrument_id == instrument_id,
+                       NewsItem.published_at <= as_of)
+                .order_by(NewsItem.published_at.desc())
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    return [
+        {"published_at": n.published_at.isoformat(), "headline": n.headline,
+         "sentiment": n.sentiment}
+        for n in rows
+    ]
+
+
 async def _universe(
     session: AsyncSession, user: User, account: Account
 ) -> list[tuple[Instrument, int]]:
@@ -276,6 +315,7 @@ async def _consider(
     seen_keys: frozenset[str],
     dry_run: bool,
     day_start_equity: Decimal,
+    reviewer: LLMClient | None = None,
 ) -> AgentDecision | None:
     """Stages 2 through 6 for a single symbol."""
     # --- 2. enrich ---
@@ -300,8 +340,30 @@ async def _consider(
     combined = consensus(signals)
 
     intent: Intent | None = None
+    reasoning_trace: dict | None = None
     if position is not None and position.quantity > 0:
         intent = await _exit_intent(session, account, policy, instrument, position, now)
+
+    # A risk exit is never sent for review. Stops are not a matter of opinion.
+    if intent is None and reviewer is not None and combined.direction is not Direction.HOLD:
+        headlines = await _recent_headlines(session, instrument.id, now)
+        unrealised = None
+        if position is not None and position.quantity and position.avg_cost > 0:
+            last = Decimal(str(series.last))
+            unrealised = float((last / position.avg_cost - 1) * 100)
+        outcome = await review(
+            reviewer, symbol=instrument.symbol, name=instrument.name,
+            sector=instrument.sector, proposal=combined, signals=signals,
+            price=Decimal(str(series.last)),
+            held_quantity=position.quantity if position else 0,
+            unrealised_pct=unrealised, headlines=headlines,
+        )
+        reasoning_trace = outcome.to_dict()
+        combined = type(combined)(
+            symbol=combined.symbol, direction=outcome.direction,
+            strength=outcome.conviction, strategy="reviewed",
+            reason=outcome.rationale, indicators=combined.indicators,
+        )
 
     if intent is None:
         if combined.direction is Direction.HOLD or combined.strength < MIN_CONVICTION:
@@ -316,7 +378,7 @@ async def _consider(
                      "strength": round(s.strength, 4), "reason": s.reason,
                      "indicators": s.indicators}
                     for s in signals
-                ]},
+                ], "reasoning": reasoning_trace},
             )
         quantity = _target_quantity(
             account.equity, Decimal(str(series.last)),
@@ -359,7 +421,7 @@ async def _consider(
             {"strategy": s.strategy, "direction": str(s.direction),
              "strength": round(s.strength, 4), "reason": s.reason}
             for s in signals
-        ], "strategy": intent.strategy},
+        ], "strategy": intent.strategy, "reasoning": reasoning_trace},
         risk_trace={"verdict": verdict.message, "checks": verdict.trace()},
         context_snapshot={
             "price": str(ctx.price), "equity": str(ctx.equity), "cash": str(ctx.cash),

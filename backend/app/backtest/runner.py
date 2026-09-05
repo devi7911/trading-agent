@@ -151,6 +151,7 @@ async def run_backtest(
     policy_overrides: dict | None = None,
     label: str = "backtest",
     keep_account: bool = False,
+    use_reviewer: bool = False,
 ) -> BacktestResult:
     """Drive the live agent loop across a historical window."""
     days = trading_days(start, end)
@@ -203,7 +204,8 @@ async def run_backtest(
     for day in days:
         clock = session_close_utc(day) + MID_SESSION_OFFSET
         run = await run_tick(
-            session, user, trigger=RunTrigger.BACKTEST, now=clock
+            session, user, trigger=RunTrigger.BACKTEST, now=clock,
+            use_reviewer=use_reviewer,
         )
         orders += run.orders_placed
         denials += run.denials
@@ -308,4 +310,43 @@ async def walk_forward(
     }
 
 
-__all__ = ["BacktestResult", "run_backtest", "walk_forward"]
+async def ab_compare(
+    session: AsyncSession,
+    *,
+    start: date,
+    end: date,
+    **kwargs,
+) -> dict:
+    """Run the same window twice: rules only, then rules plus the reviewer.
+
+    This is the question phase 08 exists to answer, and the answer is allowed to
+    be "the model made it worse". It is slow - a local model costs seconds per
+    symbol per session - so keep the window short and the universe small.
+    """
+    rules_only = await run_backtest(
+        session, start=start, end=end, label="rules-only", use_reviewer=False, **kwargs
+    )
+    reviewed = await run_backtest(
+        session, start=start, end=end, label="with-reviewer", use_reviewer=True, **kwargs
+    )
+
+    verdict = "no measurable difference"
+    if reviewed.strategy and rules_only.strategy:
+        delta = reviewed.strategy.total_return_pct - rules_only.strategy.total_return_pct
+        if delta > 0.5:
+            verdict = "the reviewer helped"
+        elif delta < -0.5:
+            verdict = "the reviewer hurt"
+
+    return {
+        "rules_only": rules_only.to_dict(),
+        "with_reviewer": reviewed.to_dict(),
+        "verdict": verdict,
+        "return_delta_pct": (
+            round(reviewed.strategy.total_return_pct - rules_only.strategy.total_return_pct, 2)
+            if reviewed.strategy and rules_only.strategy else None
+        ),
+    }
+
+
+__all__ = ["BacktestResult", "ab_compare", "run_backtest", "walk_forward"]
