@@ -36,3 +36,7 @@ Desktop.ini
 # build artifacts
 *.egg-info/
 .eggs/
+
+# local build output
+build*.log
+rebuild.log

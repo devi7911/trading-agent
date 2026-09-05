@@ -4,7 +4,8 @@ FROM python:3.12-slim AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -13,6 +14,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
+# Dependencies install from pyproject before the source is copied, so the editable
+# install records no packages - and the bind mount replaces /app at runtime anyway.
+# PYTHONPATH=/app above is what actually resolves `import app` in both cases.
 RUN pip install --upgrade pip && pip install -e ".[dev]"
 
 COPY . .
