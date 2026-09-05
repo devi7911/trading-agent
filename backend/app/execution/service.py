@@ -471,15 +471,19 @@ async def cash_from_fills(session: AsyncSession, account: Account) -> Decimal:
     stmt = select(Fill).where(Fill.account_id == account.id).order_by(Fill.ledger_seq)
     fills = list((await session.execute(stmt)).scalars())
 
+    # Replay exactly as _apply_fill does, including the per-fill rounding to
+    # the cent. Summing at full precision and rounding once at the end drifts
+    # from the stored balance by up to half a cent per fill, which would make
+    # this audit report a leak where there is none.
     cash = account.starting_cash
     for fill in fills:
         order = await session.get(Order, fill.order_id)
         gross = (fill.price * fill.quantity).quantize(CENT)
         if order.side == Side.BUY:
-            cash = cash - gross - fill.commission
+            cash = (cash - gross - fill.commission).quantize(CENT)
         else:
-            cash = cash + gross - fill.commission
-    return cash.quantize(CENT)
+            cash = (cash + gross - fill.commission).quantize(CENT)
+    return cash
 
 
 __all__ = [

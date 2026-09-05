@@ -15,6 +15,7 @@ utility crawls and a small-cap tech name lurches, exactly as in the daily data.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -32,9 +33,9 @@ from app.models import Bar, Instrument
 log = get_logger(__name__)
 
 # --- the compressed clock ----------------------------------------------------
-MINUTES_PER_SECOND = 3.0        # one real second is three simulated minutes
+MINUTES_PER_SECOND = float(os.getenv('MARKET_MINUTES_PER_SECOND', '3'))
 SESSION_MINUTES = 390.0         # a normal 09:30-16:00 session
-TICK_SECONDS = 2.0              # how often prices are regenerated
+TICK_SECONDS = float(os.getenv('MARKET_TICK_SECONDS', '2'))
 
 QUOTE_KEY = "quote:{symbol}"
 CHANNEL = "market:quotes"

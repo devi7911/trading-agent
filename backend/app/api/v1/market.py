@@ -179,6 +179,12 @@ async def list_sectors(session: SessionDep, _user: CurrentUser) -> list[str]:
 
 HEARTBEAT_SECONDS = 20.0
 
+# A stream that never ends blocks a graceful shutdown forever: uvicorn's reloader
+# prints "Waiting for connections to close" and hangs, taking the whole API with
+# it. Bounding the connection fixes that - EventSource reconnects on its own, so
+# the client never notices the seam.
+MAX_STREAM_SECONDS = 240.0
+
 
 @router.get("/clock")
 async def market_clock_state() -> dict:
@@ -199,9 +205,10 @@ async def _quote_events() -> AsyncGenerator[str, None]:
     redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
     pubsub = redis.pubsub()
     await pubsub.subscribe(CHANNEL)
+    deadline = asyncio.get_running_loop().time() + MAX_STREAM_SECONDS
     try:
         yield ": connected\n\n"
-        while True:
+        while asyncio.get_running_loop().time() < deadline:
             message = await pubsub.get_message(
                 ignore_subscribe_messages=True, timeout=HEARTBEAT_SECONDS
             )
@@ -210,6 +217,9 @@ async def _quote_events() -> AsyncGenerator[str, None]:
                 yield ": keep-alive\n\n"
                 continue
             yield f"data: {message['data']}\n\n"
+        # Ask the browser to come straight back rather than waiting out its
+        # default retry, so the reconnect is invisible.
+        yield "retry: 500\n\n"
     except asyncio.CancelledError:  # the client went away
         raise
     finally:

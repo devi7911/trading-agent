@@ -217,7 +217,11 @@ async def test_the_ledger_reconciles_after_hundreds_of_random_orders(ledger):
     assert placed == 400
 
     expected_cash = await execution.cash_from_fills(session, account)
-    assert abs(account.cash - expected_cash) < CENT, (
+    # Exact, not "within a cent". A per-fill rounding difference between the
+    # ledger and the replay stays under a cent for a few hundred fills and then
+    # walks past reconcile.TOLERANCE, which halts the account for a drift that
+    # was never real. A tolerance here hides exactly that.
+    assert account.cash == expected_cash, (
         f"cash drifted: stored {account.cash}, fills imply {expected_cash}"
     )
 
@@ -284,7 +288,7 @@ async def test_enum_columns_survive_a_round_trip_through_the_database(ledger):
     assert reloaded.status == OrderStatus.FILLED
     # Recomputing cash from fills must agree whichever way the enum came back.
     expected = await execution.cash_from_fills(session, account)
-    assert abs(account.cash - expected) < CENT
+    assert account.cash == expected
 
 
 @pytest.mark.slow
