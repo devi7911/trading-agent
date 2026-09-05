@@ -49,7 +49,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF"]
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S105", "S106"]
+"tests/*" = ["S105", "S106", "S311"]
 "alembic/*" = ["E501"]
 # The sector table is aligned on purpose; column alignment beats the line limit.
 "app/market/synthetic/universe.py" = ["E501"]
@@ -60,6 +60,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
   "integration: needs a live Postgres (run inside compose: docker compose exec api pytest)",
+  "slow: long-running; deselect with -m 'not slow'",
 ]
 
 [tool.mypy]
