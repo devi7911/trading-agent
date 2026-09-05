@@ -34,14 +34,18 @@ MINUTES_PER_SESSION = 390.0
 
 
 async def load_series(
-    session: AsyncSession, instrument_id: uuid.UUID, lookback: int = 400
+    session: AsyncSession,
+    instrument_id: uuid.UUID,
+    lookback: int = 400,
+    as_of: datetime | None = None,
 ) -> PriceSeries | None:
-    stmt = (
-        select(Bar.ts, Bar.open, Bar.high, Bar.low, Bar.close, Bar.volume)
-        .where(Bar.instrument_id == instrument_id, Bar.timeframe == "1d")
-        .order_by(Bar.ts.desc())
-        .limit(lookback)
-    )
+    """History up to and including `as_of`. Never beyond it - that is lookahead."""
+    stmt = select(
+        Bar.ts, Bar.open, Bar.high, Bar.low, Bar.close, Bar.volume
+    ).where(Bar.instrument_id == instrument_id, Bar.timeframe == "1d")
+    if as_of is not None:
+        stmt = stmt.where(Bar.ts <= as_of)
+    stmt = stmt.order_by(Bar.ts.desc()).limit(lookback)
     rows = list((await session.execute(stmt)).all())
     if len(rows) < 2:
         return None
@@ -72,11 +76,20 @@ def session_position(now: datetime, day: date) -> tuple[bool, float, float]:
 
 
 async def _trades_today(
-    session: AsyncSession, account_id: uuid.UUID, day_start: datetime
+    session: AsyncSession, account_id: uuid.UUID, day_start: datetime, day_end: datetime
 ) -> tuple[int, dict[uuid.UUID, int]]:
+    """Trades placed in THIS session.
+
+    Filtered on `submitted_at`, which carries the simulated clock, not
+    `created_at`, which is a wall-clock server default. Using created_at meant a
+    replay counted every order it had ever placed as "today": the daily limit
+    pinned at its ceiling on the first simulated day and the agent never traded
+    again for the rest of the backtest.
+    """
     stmt = select(Order.instrument_id).where(
         Order.account_id == account_id,
-        Order.created_at >= day_start,
+        Order.submitted_at >= day_start,
+        Order.submitted_at <= day_end,
         Order.status.in_([OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED]),
     )
     rows = list((await session.execute(stmt)).scalars())
@@ -87,7 +100,7 @@ async def _trades_today(
 
 
 async def _sector_exposure(
-    session: AsyncSession, account_id: uuid.UUID
+    session: AsyncSession, account_id: uuid.UUID, as_of: datetime | None = None
 ) -> dict[str, Decimal]:
     stmt = (
         select(Instrument.sector, Position.quantity, Position.instrument_id)
@@ -98,13 +111,13 @@ async def _sector_exposure(
 
     exposure: dict[str, Decimal] = {}
     for sector, quantity, instrument_id in rows:
+        price_stmt = select(Bar.close).where(
+            Bar.instrument_id == instrument_id, Bar.timeframe == "1d"
+        )
+        if as_of is not None:
+            price_stmt = price_stmt.where(Bar.ts <= as_of)
         bar = (
-            await session.execute(
-                select(Bar.close)
-                .where(Bar.instrument_id == instrument_id, Bar.timeframe == "1d")
-                .order_by(Bar.ts.desc())
-                .limit(1)
-            )
+            await session.execute(price_stmt.order_by(Bar.ts.desc()).limit(1))
         ).scalar_one_or_none()
         if bar is None:
             continue
@@ -134,13 +147,11 @@ async def build_context(
     seen_keys: frozenset[str],
     day_start_equity: Decimal,
 ) -> RiskContext:
+    bar_stmt = select(Bar).where(
+        Bar.instrument_id == instrument.id, Bar.timeframe == "1d", Bar.ts <= now
+    )
     bar = (
-        await session.execute(
-            select(Bar)
-            .where(Bar.instrument_id == instrument.id, Bar.timeframe == "1d")
-            .order_by(Bar.ts.desc())
-            .limit(1)
-        )
+        await session.execute(bar_stmt.order_by(Bar.ts.desc()).limit(1))
     ).scalar_one_or_none()
 
     price = bar.close if bar else Decimal(0)
@@ -197,7 +208,9 @@ async def day_start_equity(session: AsyncSession, account: Account, now: datetim
     """
     midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
     stmt = select(func.count()).select_from(Fill).where(
-        Fill.account_id == account.id, Fill.filled_at >= midnight
+        Fill.account_id == account.id,
+        Fill.filled_at >= midnight,
+        Fill.filled_at < midnight + timedelta(days=1),
     )
     traded_today = await session.scalar(stmt)
     if not traded_today:
@@ -209,9 +222,10 @@ async def collect_shared(
     session: AsyncSession, account: Account, now: datetime
 ) -> tuple[dict[str, Decimal], int, dict[uuid.UUID, int], Decimal]:
     """The parts of the context that are the same for every symbol in a tick."""
-    midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC) - timedelta(0)
-    exposure = await _sector_exposure(session, account.id)
-    total, per_symbol = await _trades_today(session, account.id, midnight)
+    midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
+    end_of_day = midnight + timedelta(days=1)
+    exposure = await _sector_exposure(session, account.id, now)
+    total, per_symbol = await _trades_today(session, account.id, midnight, end_of_day)
     start_equity = await day_start_equity(session, account, now)
     return exposure, total, per_symbol, start_equity
 

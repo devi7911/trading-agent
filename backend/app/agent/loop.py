@@ -78,7 +78,7 @@ def _target_quantity(
 
 async def _exit_intent(
     session: AsyncSession, account: Account, policy: Policy,
-    instrument: Instrument, position: Position,
+    instrument: Instrument, position: Position, as_of: datetime,
 ) -> Intent | None:
     """Stop loss and take profit, evaluated before any new entry is considered.
 
@@ -87,7 +87,11 @@ async def _exit_intent(
     bar = (
         await session.execute(
             select(Bar)
-            .where(Bar.instrument_id == instrument.id, Bar.timeframe == "1d")
+            .where(
+                Bar.instrument_id == instrument.id,
+                Bar.timeframe == "1d",
+                Bar.ts <= as_of,
+            )
             .order_by(Bar.ts.desc())
             .limit(1)
         )
@@ -200,7 +204,7 @@ async def run_tick(
                 run.intents_formed += 1
 
         # --- 7. observe -----------------------------------------------------
-        await execution._mark_to_market(session, account)
+        await execution._mark_to_market(session, account, as_of=now)
 
         run.status = RunStatus.COMPLETED
         run.summary = {
@@ -275,7 +279,7 @@ async def _consider(
 ) -> AgentDecision | None:
     """Stages 2 through 6 for a single symbol."""
     # --- 2. enrich ---
-    series = await load_series(session, instrument.id)
+    series = await load_series(session, instrument.id, as_of=now)
     if series is None:
         return None
     series = type(series)(
@@ -297,7 +301,7 @@ async def _consider(
 
     intent: Intent | None = None
     if position is not None and position.quantity > 0:
-        intent = await _exit_intent(session, account, policy, instrument, position)
+        intent = await _exit_intent(session, account, policy, instrument, position, now)
 
     if intent is None:
         if combined.direction is Direction.HOLD or combined.strength < MIN_CONVICTION:

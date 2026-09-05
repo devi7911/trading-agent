@@ -64,20 +64,29 @@ def transition(order: Order, new_status: OrderStatus) -> None:
 # --- market context ---------------------------------------------------------
 
 
-async def _latest_bar(session: AsyncSession, instrument_id: uuid.UUID) -> Bar | None:
-    stmt = (
-        select(Bar)
-        .where(Bar.instrument_id == instrument_id, Bar.timeframe == "1d")
-        .order_by(Bar.ts.desc())
-        .limit(1)
-    )
+async def _latest_bar(
+    session: AsyncSession, instrument_id: uuid.UUID, as_of: datetime | None = None
+) -> Bar | None:
+    """The most recent bar AT OR BEFORE `as_of`.
+
+    `as_of` is what makes a backtest honest: without it, a replay of 2023 would
+    price its decisions using 2026 data and every result would be fiction.
+    """
+    stmt = select(Bar).where(Bar.instrument_id == instrument_id, Bar.timeframe == "1d")
+    if as_of is not None:
+        stmt = stmt.where(Bar.ts <= as_of)
+    stmt = stmt.order_by(Bar.ts.desc()).limit(1)
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
 async def market_context(
-    session: AsyncSession, instrument: Instrument, *, market_open: bool = True
+    session: AsyncSession,
+    instrument: Instrument,
+    *,
+    market_open: bool = True,
+    as_of: datetime | None = None,
 ) -> MarketContext:
-    bar = await _latest_bar(session, instrument.id)
+    bar = await _latest_bar(session, instrument.id, as_of)
     reference = bar.close if bar else Decimal(0)
 
     # Daily volatility from the annualised figure the generator assigned.
@@ -85,13 +94,12 @@ async def market_context(
 
     avg_volume = 1_000_000
     if bar:
-        recent = (
-            select(Bar.volume)
-            .where(Bar.instrument_id == instrument.id, Bar.timeframe == "1d")
-            .order_by(Bar.ts.desc())
-            .limit(21)
-            .subquery()
+        volume_stmt = select(Bar.volume).where(
+            Bar.instrument_id == instrument.id, Bar.timeframe == "1d"
         )
+        if as_of is not None:
+            volume_stmt = volume_stmt.where(Bar.ts <= as_of)
+        recent = volume_stmt.order_by(Bar.ts.desc()).limit(21).subquery()
         avg = await session.scalar(select(func.avg(recent.c.volume)))
         if avg:
             avg_volume = int(avg)
@@ -294,7 +302,9 @@ async def place_order(
     session.add(order)
     await session.flush()
 
-    context = await market_context(session, instrument, market_open=market_open)
+    context = await market_context(
+        session, instrument, market_open=market_open, as_of=as_of
+    )
 
     try:
         await _pre_trade_checks(
@@ -342,7 +352,7 @@ async def place_order(
     elif order.filled_quantity > 0:
         transition(order, OrderStatus.PARTIALLY_FILLED)
 
-    await _mark_to_market(session, account)
+    await _mark_to_market(session, account, as_of=as_of)
     await _audit(session, account, order, "order.placed", actor, {
         "symbol": instrument.symbol,
         "side": str(order.side),
@@ -374,7 +384,9 @@ async def cancel_order(
     return order
 
 
-async def _mark_to_market(session: AsyncSession, account: Account) -> Decimal:
+async def _mark_to_market(
+    session: AsyncSession, account: Account, *, as_of: datetime | None = None
+) -> Decimal:
     """Equity = cash + the market value of every open position."""
     stmt = select(Position).where(
         Position.account_id == account.id, Position.quantity != 0
@@ -383,7 +395,7 @@ async def _mark_to_market(session: AsyncSession, account: Account) -> Decimal:
 
     market_value = Decimal(0)
     for position in positions:
-        bar = await _latest_bar(session, position.instrument_id)
+        bar = await _latest_bar(session, position.instrument_id, as_of)
         if bar:
             market_value += bar.close * position.quantity
 

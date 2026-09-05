@@ -135,6 +135,95 @@ def digest_cmd() -> None:
     asyncio.run(run())
 
 
+@app.command("backtest")
+def backtest_cmd(
+    days: int = typer.Option(400, help="How many calendar days to replay."),
+    symbols: str = typer.Option("", help="Comma-separated symbols. Blank picks a spread."),
+    universe: int = typer.Option(10, help="Universe size when no symbols are named."),
+    walk_forward: bool = typer.Option(False, help="Split in-sample / out-of-sample."),
+) -> None:
+    """Replay the agent over history and compare it with buy-and-hold."""
+    configure_logging("WARNING", json_output=False)
+
+    async def run() -> None:
+        from datetime import timedelta
+
+        from app.agent.clock import latest_bar_date
+        from app.backtest.runner import run_backtest
+        from app.backtest.runner import walk_forward as run_walk_forward
+
+        async with SessionLocal() as session:
+            last = await latest_bar_date(session)
+            if last is None:
+                typer.echo("No market data. Run seed-market first.")
+                return
+            start = last - timedelta(days=days)
+            wanted = [s.strip() for s in symbols.split(",") if s.strip()] or None
+
+            typer.echo(f"Replaying {start} to {last}...")
+            if walk_forward:
+                report = await run_walk_forward(
+                    session, start=start, end=last, symbols=wanted, universe_size=universe
+                )
+                for phase in ("in_sample", "out_of_sample"):
+                    r = report[phase]
+                    typer.echo("")
+                    typer.echo(f"  {phase.replace('_', ' ').upper()}")
+                    _print_leg(r)
+                typer.echo("")
+                typer.echo(f"  return decay   {report['annualised_return_decay_pct']:+.2f}% "
+                           f"annualised")
+                typer.echo(f"  held up        {report['held_up_out_of_sample']}")
+            else:
+                result = await run_backtest(
+                    session, start=start, end=last, symbols=wanted, universe_size=universe
+                )
+                typer.echo("")
+                _print_leg(result.to_dict())
+            await session.rollback()
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
+def _print_leg(r: dict) -> None:
+    s, b = r["strategy"], r["benchmark"]
+    typer.echo(f"  window         {r['start']} to {r['end']}  ({s['days']} sessions)")
+    typer.echo(f"  symbols        {len(r['symbols'])}   orders {r['orders_placed']}   "
+               f"denials {r['denials']}")
+    typer.echo("")
+    typer.echo(f"  {'':<16}{'AGENT':>12}{'BUY & HOLD':>14}")
+    typer.echo(f"  {'total return':<16}{s['total_return_pct']:>11.2f}%"
+               f"{b['total_return_pct']:>13.2f}%")
+    typer.echo(f"  {'annualised':<16}{s['annualised_return_pct']:>11.2f}%"
+               f"{b['annualised_return_pct']:>13.2f}%")
+    typer.echo(f"  {'volatility':<16}{s['annualised_vol_pct']:>11.2f}%"
+               f"{b['annualised_vol_pct']:>13.2f}%")
+    typer.echo(f"  {'sharpe':<16}{s['sharpe']!s:>12}{b['sharpe']!s:>14}")
+    typer.echo(f"  {'max drawdown':<16}{s['max_drawdown_pct']:>11.2f}%"
+               f"{b['max_drawdown_pct']:>13.2f}%")
+    typer.echo(f"  {'longest DD':<16}{s['longest_drawdown_days']:>11}d"
+               f"{b['longest_drawdown_days']:>13}d")
+    typer.echo("")
+    verdict = "BEAT" if r["beat_benchmark"] else "LOST TO"
+    typer.echo(f"  the agent {verdict} buy-and-hold by "
+               f"{abs(r['excess_return_pct']):.2f} points")
+    if r.get("capital_deployed_pct") is not None:
+        typer.echo(f"  capital in play {r['capital_deployed_pct']:.1f}% at the end")
+    breakdown = r.get("denial_breakdown") or {}
+    if breakdown:
+        top = list(breakdown.items())[:5]
+        typer.echo("  why it held back:")
+        for reason, count in top:
+            typer.echo(f"     {reason:<28} {count:>6}")
+    boot = r.get("bootstrap") or {}
+    if boot.get("samples"):
+        typer.echo(f"  bootstrap      median {boot['median_return_pct']:+.2f}%  "
+                   f"p05 {boot['p05_return_pct']:+.2f}%  "
+                   f"p95 {boot['p95_return_pct']:+.2f}%  "
+                   f"loss odds {boot['probability_of_loss_pct']:.0f}%")
+
+
 @app.command("setup-agent")
 def setup_agent_cmd(
     email: str = typer.Option(..., help="Which user to set up."),
