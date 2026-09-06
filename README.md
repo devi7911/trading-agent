@@ -345,10 +345,18 @@ Promotion runs `dev` -> `sit` -> `pat` -> `main`, by pull request at each step.
 
 | Branch | Environment | Gate |
 |---|---|---|
-| `dev`  | Dev | none - merges and deploys on a green build |
-| `sit`  | SIT | a reviewer must approve before the promote job runs |
-| `pat`  | PAT | a reviewer must approve before the promote job runs |
+| `dev`  | Dev | none - promotes on a green build |
+| `sit`  | SIT | the pull request merge |
+| `pat`  | PAT | the pull request merge |
 | `main` | -   | the release trunk; no promote job |
+
+Each environment is scoped to its own branch, so a `dev` build cannot deploy to
+PAT even by mistake. The intended gate on SIT and PAT is a required reviewer on
+the environment, which GitHub does not offer for a private repository on the
+Free plan - neither environment protection rules nor branch rulesets can be
+created. Until the repo is public or on a paid plan, the only real gate is the
+human opening and merging the promotion pull request. Do not read a green
+`Promote to sit` job as "someone approved this"; nobody did.
 
 CI runs on every push and pull request to all four: ruff, `alembic upgrade head`
 and the full backend suite against a real TimescaleDB and Redis, plus the
