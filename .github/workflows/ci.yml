@@ -77,8 +77,35 @@ jobs:
       - name: Migrate
         run: alembic upgrade head
 
+      - name: Seed the market
+        # Without this, every test that needs instruments - the ledger
+        # reconciliation gate, the agent loop, the backtest - calls
+        # pytest.skip and the build goes green having verified none of them.
+        # A smaller universe and less history than a local seed: enough for
+        # the 200-session windows the strategies need, fast enough for CI.
+        run: python -m app.cli seed-market --count 24 --years 3
+
       - name: Test
-        run: pytest -q
+        run: pytest -q -rs --junitxml=/tmp/report.xml
+
+      - name: No test may skip in CI
+        # A skip here means the environment is wrong - an unseeded database,
+        # a missing service - not that a test is optional. Silent skips are
+        # how a green build comes to certify nothing.
+        run: |
+          python - <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse('/tmp/report.xml').getroot()
+          suite = root if root.tag == 'testsuite' else root.find('testsuite')
+          skipped = int(suite.get('skipped', '0'))
+          total = int(suite.get('tests', '0'))
+          print(f'{total} tests, {skipped} skipped')
+          if skipped:
+              for case in suite.iter('testcase'):
+                  if case.find('skipped') is not None:
+                      print(f"  skipped: {case.get('classname')}::{case.get('name')}")
+              sys.exit('Tests were skipped in CI. Fix the environment, not the assertion.')
+          EOF
 
   frontend:
     name: Frontend - production build
