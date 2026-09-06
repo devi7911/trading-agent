@@ -52,7 +52,7 @@ jobs:
       # A throwaway key that satisfies the 32-byte HS256 minimum. Real
       # deployments read this from the environment's secrets, never from here.
       SECRET_KEY: ci-only-key-not-a-secret-padded-to-32-bytes
-      APP_ENV: ci
+      APP_ENV: test
       ALLOW_LIVE_TRADING: 'false'
 
     defaults:
@@ -60,9 +60,9 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -88,9 +88,9 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -118,7 +118,7 @@ jobs:
     environment: ${{ github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Record what was promoted
         run: |
           echo "### Promoted to ${GITHUB_REF_NAME}" >> "$GITHUB_STEP_SUMMARY"
