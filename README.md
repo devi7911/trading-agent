@@ -319,6 +319,11 @@ infra/           database init
 docs/            architecture and phase plan
 ```
 
+`docs/how-it-was-built.html` is the working-session record: every prompt that
+produced this repository, in order, and what each one turned into - including
+the four one-line questions that each turned up a real bug. Open it in a
+browser.
+
 ## Safety rails already in place
 
 - `ALLOW_LIVE_TRADING` defaults to `false` and no live adapter exists.

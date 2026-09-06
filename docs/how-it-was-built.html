@@ -1,0 +1,904 @@
+<title>Six Hours, Thirty Prompts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  /* ---------------------------------------------------------------
+     One idea runs the whole page: the human's words are set in a
+     reading serif, everything the machine did is set in mono. The
+     left rail is a tape - timestamp, turn number - the way an order
+     blotter runs down the side of a terminal.
+     --------------------------------------------------------------- */
+
+  :root {
+    /* Blue-biased neutrals, ticker amber for the accent, and the
+       buy/green sell/red used only where a trade is literally meant. */
+    --ground:  #EFF2F6;
+    --surface: #FFFFFF;
+    --sunk:    #E4E9F0;
+    --ink:     #101720;
+    --muted:   #57626F;
+    --faint:   #7C8797;
+    --rule:    #D6DCE5;
+    --accent:  #8A5310;
+    --accent-soft: #F0E2CC;
+    --buy:     #146B52;
+    --sell:    #9C332F;
+
+    --measure: 34rem;
+    --rail: 7.5rem;
+
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #0E141B;
+      --surface: #151D27;
+      --sunk:    #1B242F;
+      --ink:     #E7ECF2;
+      --muted:   #97A3B2;
+      --faint:   #6F7C8C;
+      --rule:    #26313E;
+      --accent:  #E3A85E;
+      --accent-soft: #2C2418;
+      --buy:     #55C29D;
+      --sell:    #EE8B86;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:  #0E141B;
+    --surface: #151D27;
+    --sunk:    #1B242F;
+    --ink:     #E7ECF2;
+    --muted:   #97A3B2;
+    --faint:   #6F7C8C;
+    --rule:    #26313E;
+    --accent:  #E3A85E;
+    --accent-soft: #2C2418;
+    --buy:     #55C29D;
+    --sell:    #EE8B86;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: Newsreader, Georgia, 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 5rem;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding-bottom: 2rem;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  h1 {
+    font-family: Archivo, 'Helvetica Neue', Arial, sans-serif;
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.5vw, 3.1rem);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.12rem;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .standfirst em { color: var(--ink); font-style: italic; }
+
+  /* ---------- stat strip ---------- */
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 2rem 0 3.5rem;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 0.9rem 1rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .stat__value {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .stat__label {
+    font-family: Archivo, sans-serif;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  /* ---------- section headings ---------- */
+
+  .act {
+    display: flex;
+    align-items: baseline;
+    gap: 0.9rem;
+    margin: 3.25rem 0 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+  }
+
+  .act:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+
+  .act__num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    flex: 0 0 auto;
+    width: var(--rail);
+  }
+
+  .act__title {
+    font-family: Archivo, sans-serif;
+    font-size: 1.02rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 0;
+  }
+
+  .act__time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--faint);
+    margin-left: auto;
+  }
+
+  /* ---------- the tape ---------- */
+
+  .turn {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    gap: 0 1.5rem;
+    padding: 1.4rem 0;
+    border-top: 1px solid var(--rule);
+    align-items: start;
+  }
+
+  .turn__meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding-top: 0.35rem;
+  }
+
+  .turn__n { color: var(--accent); font-weight: 700; }
+
+  /* The human's words. A serif, larger, quoted with a rule. */
+  .said {
+    font-size: 1.16rem;
+    line-height: 1.5;
+    margin: 0;
+    padding-left: 1rem;
+    border-left: 3px solid var(--accent);
+    white-space: pre-wrap;
+  }
+
+  .said--long { font-size: 1.04rem; }
+
+  /* Everything the machine did. Mono, smaller, quiet. */
+  .did {
+    font-family: Archivo, sans-serif;
+    font-size: 0.93rem;
+    line-height: 1.62;
+    color: var(--muted);
+    margin: 0.85rem 0 0;
+    padding-left: 1rem;
+  }
+
+  .did strong { color: var(--ink); font-weight: 600; }
+
+  .did code, .said code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.86em;
+    background: var(--sunk);
+    padding: 0.08em 0.35em;
+    border-radius: 2px;
+  }
+
+  .redact {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8em;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 0.1em 0.45em;
+    letter-spacing: 0.03em;
+  }
+
+  /* outcome chips - only where there is a concrete result */
+  .out {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.85rem 0 0;
+    padding-left: 1rem;
+    list-style: none;
+  }
+
+  .chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.01em;
+    padding: 0.24rem 0.55rem;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .chip--buy  { color: var(--buy);  border-color: color-mix(in srgb, var(--buy) 40%, var(--rule)); }
+  .chip--sell { color: var(--sell); border-color: color-mix(in srgb, var(--sell) 40%, var(--rule)); }
+
+  /* a system event, not a prompt */
+  .turn--system .said {
+    border-left-style: dashed;
+    border-left-color: var(--faint);
+    font-family: Archivo, sans-serif;
+    font-size: 0.95rem;
+    font-style: normal;
+    color: var(--muted);
+  }
+
+  /* ---------- pull quote ---------- */
+
+  .pull {
+    margin: 3rem 0;
+    padding: 1.75rem 0 1.75rem 1.5rem;
+    border-left: 3px solid var(--ink);
+    max-width: var(--measure);
+  }
+
+  .pull p {
+    font-size: 1.35rem;
+    line-height: 1.4;
+    font-style: italic;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .pull cite {
+    display: block;
+    margin-top: 0.75rem;
+    font-family: Archivo, sans-serif;
+    font-size: 0.75rem;
+    font-style: normal;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  /* ---------- closing notes ---------- */
+
+  .note {
+    max-width: var(--measure);
+    margin: 0 0 1.1rem;
+    color: var(--muted);
+    font-size: 1.02rem;
+  }
+
+  .note strong { color: var(--ink); font-weight: 500; }
+
+  .ledger {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .scroller { overflow-x: auto; }
+
+  .ledger th {
+    text-align: left;
+    font-family: Archivo, sans-serif;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--faint);
+    padding: 0 1rem 0.5rem 0;
+    border-bottom: 1px solid var(--ink);
+    white-space: nowrap;
+  }
+
+  .ledger td {
+    padding: 0.45rem 1rem 0.45rem 0;
+    border-bottom: 1px solid var(--rule);
+    color: var(--muted);
+    vertical-align: top;
+  }
+
+  .ledger td:first-child { color: var(--ink); white-space: nowrap; }
+  .ledger td.num { text-align: right; padding-right: 1.5rem; color: var(--ink); }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 2px solid var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+  }
+
+  @media (max-width: 640px) {
+    :root { --rail: 4.5rem; }
+    .turn { gap: 0 0.9rem; }
+    .said { font-size: 1.06rem; }
+    .act__time { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Working session · 5 September 2026 · 15:02–21:04 ET</p>
+    <h1>Six Hours, Thirty Prompts</h1>
+    <p class="standfirst">
+      Devi asked for an autonomous stock-trading agent and then mostly got out of
+      the way. This is every message he sent, in order, and what each one turned
+      into. His words are set in serif; <em>everything the machine did is in the
+      small type underneath.</em>
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><span class="stat__value">30</span><span class="stat__label">Prompts sent</span></div>
+    <div class="stat"><span class="stat__value">713</span><span class="stat__label">Tool calls</span></div>
+    <div class="stat"><span class="stat__value">23</span><span class="stat__label">Commits</span></div>
+    <div class="stat"><span class="stat__value">267</span><span class="stat__label">Tests</span></div>
+    <div class="stat"><span class="stat__value">13.8k</span><span class="stat__label">Lines of Python</span></div>
+    <div class="stat"><span class="stat__value">6h 02m</span><span class="stat__label">Elapsed</span></div>
+  </div>
+
+  <!-- ============ ACT 1 ============ -->
+
+  <div class="act">
+    <span class="act__num">PART ONE</span>
+    <h2 class="act__title">The brief</h2>
+    <span class="act__time">15:02 – 15:21</span>
+  </div>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">01</span><span>15:02</span></div>
+    <div>
+      <p class="said">Hello</p>
+      <p class="did">Nothing yet. Worth keeping in the record because the entire
+        system below started from one word.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">02</span><span>15:08</span></div>
+    <div>
+      <p class="said said--long">We need a plan to proceed in creating a Agentic Stock trading tool.
+I will have minimal interaction with the web application, everything will be handled by the agent like buying stock, selling, holding, tracking, adding new stocks to list, keeping favorites etc etc
+
+We will have a production grade application
+
+Starting point is the Web application goal is to get notifications to my phone/app/email what ever is easier. In between everything should be handled by agent. Once I signup in the tool and set the tagerts the agent should handle from there. Like a washing machine I just put clothes and liquid everything will auto. I just add my stocks list and keep money in account and everything will be auto.
+
+For that what all we need to have ? Remember everything should be dynamic and use open source free versions tools/apis, etc etc in this project
+
+if we need to use mock trading account or mock api mock companies use them but they also should be dynamic. Since we do not have a live trading account we will have to simmulating a mock one which appears like a live one</p>
+      <p class="did">The whole build came out of this one message. Four constraints
+        did the real work: <strong>minimal interaction</strong> (so the agent has to
+        run unattended), <strong>production grade</strong> (so a demo script wasn't
+        enough), <strong>free and open source</strong> (which ruled out every paid
+        market-data feed), and <strong>simulated but dynamic</strong> — which is why
+        the market had to be generated rather than replayed from a CSV. The washing
+        machine line became the actual design target.</p>
+      <p class="did">Answered with a full architecture plan, then four
+        questions: stack, hosting, notification channel, and how much planning
+        detail he wanted up front.</p>
+      <ul class="out">
+        <li class="chip">Angular + FastAPI</li>
+        <li class="chip">Local Docker Compose</li>
+        <li class="chip">Telegram</li>
+        <li class="chip">10-phase plan</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">03</span><span>15:18</span></div>
+    <div>
+      <p class="said">first what we need to do ? build a local application ?</p>
+      <p class="did">Yes — and this is the question that set the shape of everything
+        after it. Local Docker Compose meant no cloud bill, no API keys, and a market
+        that could be sped up or rewound at will.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">04</span><span>15:21</span></div>
+    <div>
+      <p class="said">Yes</p>
+      <p class="did">Phase 00 built: Postgres with TimescaleDB, Redis, FastAPI,
+        Angular, Argon2 password hashing, JWT auth, Alembic migrations, and a
+        seven-service compose stack.</p>
+    </div>
+  </article>
+
+  <!-- ============ ACT 2 ============ -->
+
+  <div class="act">
+    <span class="act__num">PART TWO</span>
+    <h2 class="act__title">Getting it running</h2>
+    <span class="act__time">15:35 – 16:52</span>
+  </div>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">05</span><span>15:35</span></div>
+    <div>
+      <p class="said">localhost4200 is not runnng</p>
+      <p class="did">Docker Desktop wasn't started. Six words, correctly diagnosed —
+        no stack trace needed.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">06</span><span>15:41</span></div>
+    <div>
+      <p class="said">opened the docker</p>
+      <p class="did">Stack came up. First real bug of the session surfaced here:
+        the app refused to boot because <code>SECRET_KEY</code> was 29 bytes and
+        HS256 needs 32. The minimum length was raised rather than the warning
+        suppressed.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">07</span><span>16:11</span></div>
+    <div>
+      <p class="said">Do I need to create one ? or I already have one to sign in ?</p>
+      <p class="did">No account existed. Nobody had made one yet — the database was
+        empty by design.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">08</span><span>16:12</span></div>
+    <div>
+      <p class="said">Where is the DB in this project ?</p>
+      <p class="did">In a Docker volume, not a file in the repo. Walked through the
+        schema and how to reach it with <code>psql</code>.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">09</span><span>16:13</span></div>
+    <div>
+      <p class="said">okay so I need to create a account first ?</p>
+      <p class="did">Yes.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">10</span><span>16:14</span></div>
+    <div>
+      <p class="said">Okay account is created</p>
+      <p class="did">Signup worked end to end on the first try.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">11</span><span>16:44</span></div>
+    <div>
+      <p class="said">http://localhost:4200/api/v1/market/instruments
+
+{"detail":"Not authenticated"}</p>
+      <p class="did">Working as designed — the endpoint needs a bearer token. Pasting
+        the raw error was faster than describing it, and it's the most efficient bug
+        report in the session.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">12</span><span>16:45</span></div>
+    <div>
+      <p class="said">give payload</p>
+      <p class="did">Two words. Got back the exact login request body to send.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">13</span><span>16:46</span></div>
+    <div>
+      <p class="said">{ "access_token": <span class="redact">REDACTED FOR THIS EXPORT</span>, "refresh_token": <span class="redact">REDACTED</span> }</p>
+      <p class="did">He pasted the tokens back to confirm login had worked. They're
+        redacted here — they were valid credentials for his account, and this page
+        is meant to be shared.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">14</span><span>16:48</span></div>
+    <div>
+      <p class="said">Worth trying first:
+
+* `GET /market/instruments` — all 60 companies
+* `GET /market/instruments/VBPZ/bars` — the 40x tech name
+* `GET /market/instruments/VBPZ/news` — headlines with sentiment
+* `GET /market/instruments/VBPZ/events` — six years of earnings beats and misses
+
+Where should I try this ?</p>
+      <p class="did">He quoted the previous answer back and asked the one thing it
+        had left out: <em>where</em>. A fair catch — the list was useless without
+        somewhere to run it.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">15</span><span>16:52</span></div>
+    <div>
+      <p class="said">Along with these I need to have like stock market too. I know I cannot buy them but atleast it's useful for looking charts generate reports and stuff</p>
+      <p class="did">This added a whole product surface that wasn't in the original
+        brief: a market terminal with candlestick charts, an index and breadth
+        panel, sector performance, top movers, a news feed, and exports.</p>
+      <ul class="out">
+        <li class="chip">Candlestick charts</li>
+        <li class="chip">PDF tearsheets</li>
+        <li class="chip">Excel / CSV export</li>
+        <li class="chip">Scheduled digest</li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- ============ ACT 3 ============ -->
+
+  <div class="act">
+    <span class="act__num">PART THREE</span>
+    <h2 class="act__title">Hands off</h2>
+    <span class="act__time">17:15 – 18:48</span>
+  </div>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">16</span><span>17:15</span></div>
+    <div>
+      <p class="said">let's circle back, what all we did until now, how far we are into the plan completion</p>
+      <p class="did">A progress check. Roughly 40% at that point — phases 00 through
+        02 complete.</p>
+    </div>
+  </article>
+
+  <div class="pull">
+    <p>I would understand once we reach the 50% of the plan</p>
+    <cite>17:18 — the message that changed how the rest of the session ran</cite>
+  </div>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">17</span><span>17:18</span></div>
+    <div>
+      <p class="said">I would understand once we reach the 50% of the plan</p>
+      <p class="did">Read as: stop checking in, keep building. Phases 03, 04 and 05
+        went in without a single question — the strategy engine, the risk gate, and
+        the agent trading unattended. This is the same instinct as the brief itself:
+        <strong>set the target, then leave it alone.</strong></p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">18</span><span>17:48</span></div>
+    <div>
+      <p class="said">complete the project</p>
+      <p class="did">Three words bought about an hour of unattended work: the
+        dashboard, Telegram notifications, the local LLM reviewer, the backtest
+        harness, and a second broker adapter. Phases 06 through 10.</p>
+      <ul class="out">
+        <li class="chip">10 / 10 phases</li>
+        <li class="chip">267 tests passing</li>
+        <li class="chip">Backtest: 277 sessions</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">19</span><span>18:46</span></div>
+    <div>
+      <p class="said">So now I need to download a AI modal on local ?</p>
+      <p class="did">Optional, not required — the agent trades on its rules with no
+        model at all. He pulled <code>llama3.2:1b</code> anyway, 1.3 GB, running
+        through Ollama on his own machine.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">20</span><span>18:47</span></div>
+    <div>
+      <p class="said">how to test this app now ?</p>
+      <p class="did">Walked through the URLs, the login, and how to watch the agent
+        place its first orders.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">21</span><span>18:48</span></div>
+    <div>
+      <p class="said">The agent is already running ?</p>
+      <p class="did">Yes — a background worker ticking on its own schedule, whether
+        or not the browser was open.</p>
+    </div>
+  </article>
+
+  <!-- ============ ACT 4 ============ -->
+
+  <div class="act">
+    <span class="act__num">PART FOUR</span>
+    <h2 class="act__title">Four questions that each found a bug</h2>
+    <span class="act__time">18:49 – 19:27</span>
+  </div>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">22</span><span>18:49</span></div>
+    <div>
+      <p class="said">Portfolio · Equity 100,000.00 · Cash 100,000.00 · Invested 0.00 · 0 positions · No orders yet.
+
+I see this only</p>
+      <p class="did">He pasted the whole screen rather than describing it. Everything
+        was zero because the agent had never been given a watchlist — nothing to
+        trade. Set one up and it started placing orders.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">23</span><span>18:56</span></div>
+    <div>
+      <p class="said">Not seeing any live changes, I want to see that live change</p>
+      <p class="did">Correct, and a real gap: the market was <strong>frozen daily
+        bars</strong>. Prices only moved once per simulated day, so nothing on screen
+        ever ticked. This prompt caused an entire subsystem to be built — an
+        intraday price simulator, a Redis pub/sub channel, and a live server-sent
+        event stream into the browser.</p>
+      <ul class="out">
+        <li class="chip">Live ticker worker</li>
+        <li class="chip">SSE stream</li>
+        <li class="chip">Flashing price cells</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">24</span><span>19:04</span></div>
+    <div>
+      <p class="said">Loading portfolio…
+
+this is all I see</p>
+      <p class="did">The most serious bug of the session, and five words found it.
+        The API had <strong>hung completely</strong> — every request, including the
+        health check. The reloader had noticed a file change, tried to restart, and
+        waited forever for connections to close, because the new event stream never
+        ends. Fixed by capping stream lifetime and telling the browser to reconnect.</p>
+      <ul class="out">
+        <li class="chip--sell chip">API fully wedged</li>
+        <li class="chip--buy chip">Fixed + committed</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">25</span><span>19:10</span></div>
+    <div>
+      <p class="said">are you selling anything ?</p>
+      <p class="did">Four words, and the answer was <strong>no</strong> — the exit
+        path had never actually fired at runtime. It was written and unit-tested but
+        no position had ever moved far enough to trigger it. Tightening the stop
+        proved it worked: two stop-loss exits fired, and the ledger still
+        reconciled.</p>
+      <ul class="out">
+        <li class="chip chip--sell">Stop loss fired ×2</li>
+        <li class="chip chip--buy">Ledger reconciled</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">26</span><span>19:15</span></div>
+    <div>
+      <p class="said">be quick with buy sell and hold I need to see the changes to make sure all are happening</p>
+      <p class="did">Sped the simulation to 12 market-minutes per real second and
+        tightened the policy so all three behaviours would show inside a couple of
+        minutes. They did.</p>
+      <ul class="out">
+        <li class="chip chip--buy">42 buys</li>
+        <li class="chip chip--sell">20 sells</li>
+        <li class="chip">131 holds</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="turn turn--system">
+    <div class="turn__meta"><span class="turn__n">··</span><span>19:20</span></div>
+    <div>
+      <p class="said">Conversation ran out of context and was summarised to continue.</p>
+      <p class="did">Not a prompt — a system event. The session was long enough that
+        the earlier half had to be compressed into a written summary so the work
+        could carry on without losing the thread.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">27</span><span>19:27</span></div>
+    <div>
+      <p class="said">cash is not changing</p>
+      <p class="did">Four words, and right again. Cash <em>was</em> moving in the
+        database — the page just never asked twice. It fetched the account once when
+        it loaded and only prices streamed after that, so the screen showed
+        flickering prices above a frozen balance. Now both pages re-fetch every five
+        seconds.</p>
+      <p class="did">Chasing that also turned up a latent bug: the ledger audit
+        rounded differently than the ledger itself, by under half a cent per fill.
+        Left alone, it would eventually have <strong>halted the account for a drift
+        that never happened.</strong></p>
+    </div>
+  </article>
+
+  <!-- ============ ACT 5 ============ -->
+
+  <div class="act">
+    <span class="act__num">PART FIVE</span>
+    <h2 class="act__title">Where things live</h2>
+    <span class="act__time">19:36 – 21:03</span>
+  </div>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">28</span><span>19:36</span></div>
+    <div>
+      <p class="said">where is lama downloaded ?</p>
+      <p class="did">On his own machine, not in Docker — <code>C:\Users\devi7\.ollama\models</code>.
+        The containers reach it over the network, so there's only ever one copy.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">29</span><span>20:27</span></div>
+    <div>
+      <p class="said">where is agent in the
+C:\Users\devi7\source\trading-agent</p>
+      <p class="did">Mapped the four packages that make up the agent and why they're
+        separate: <strong>the model proposes, a deterministic risk engine
+        disposes.</strong> The risk gate is a pure function — no database, no clock,
+        no network, no model — so every refusal it makes is reproducible.</p>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">30</span><span>20:31</span></div>
+    <div>
+      <p class="said">Okay push it to github
+https://github.com/devi7911?tab=repositories
+
+create a new repo and push them. Have Dev Sit and Pat environments</p>
+      <p class="did">Private repo created, 23 commits pushed, four branches, CI on
+        every one. CI immediately caught two mistakes before they could be called
+        green — including a run that reported <strong>240 passed, 27 skipped</strong>,
+        where the 27 skipped were the ledger and agent tests silently sitting out
+        because the CI database had no data in it.</p>
+      <p class="did">The SIT and PAT approval gates couldn't be created: GitHub
+        doesn't offer them for a private repo on the free plan. Said so in the README
+        rather than leaving a claim that overstated the control.</p>
+      <ul class="out">
+        <li class="chip chip--buy">main ✓ dev ✓ sit ✓ pat ✓</li>
+        <li class="chip">267 tests, 0 skipped</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="turn">
+    <div class="turn__meta"><span class="turn__n">31</span><span>21:03</span></div>
+    <div>
+      <p class="said">Export this chart into a file, so my friend can understand how I communicated with you</p>
+      <p class="did">This page.</p>
+    </div>
+  </article>
+
+  <!-- ============ CLOSING ============ -->
+
+  <div class="act">
+    <span class="act__num">APPENDIX</span>
+    <h2 class="act__title">What the other side looked like</h2>
+  </div>
+
+  <p class="note">Thirty prompts, most of them under ten words, produced 713 tool
+    calls. The ratio is the point: the instructions were short and the work
+    underneath them wasn't.</p>
+
+  <div class="scroller">
+    <table class="ledger">
+      <thead>
+        <tr><th>Tool</th><th class="num">Calls</th><th>What it did</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>PowerShell</td><td class="num">258</td><td>Docker, git, database queries on his Windows machine</td></tr>
+        <tr><td>device_bash</td><td class="num">213</td><td>Reading and editing the repo files in place</td></tr>
+        <tr><td>Browser</td><td class="num">101</td><td>Opening the app and checking what actually rendered</td></tr>
+        <tr><td>Task list</td><td class="num">88</td><td>Tracking phases so nothing was quietly dropped</td></tr>
+        <tr><td>Questions</td><td class="num">5</td><td>Stack, hosting, notifications, scope, repo visibility</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="note" style="margin-top:2.5rem"><strong>The three prompts that mattered
+    most were the shortest.</strong> &ldquo;are you selling anything?&rdquo; found a
+    code path that had never run. &ldquo;cash is not changing&rdquo; found a page
+    that never refreshed and a rounding bug behind it. &ldquo;Loading portfolio…&rdquo;
+    found a completely wedged API. None of them described a symptom in any detail;
+    each one just reported, accurately, what was on the screen.</p>
+
+  <p class="note">Worth saying plainly: the agent is a simulation. It trades
+    invented companies with invented money, there is no path to a live venue in the
+    code, and the honest backtest result was left in the repo unflattered — the
+    agent returned 46% against buy-and-hold's 111% over the same period, at half
+    the volatility.</p>
+
+  <footer>
+    <span>github.com/devi7911/trading-agent · private</span>
+    <span>23 commits · 168 files · 13,813 lines of Python</span>
+    <span>5 Sep 2026</span>
+  </footer>
+
+</div>
