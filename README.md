@@ -339,6 +339,26 @@ docs/            architecture and phase plan
 - Pointing the Alpaca adapter at a live URL raises `LiveTradingRefused`. Reaching
   a live venue is not a configuration change.
 
+## Branches and environments
+
+Promotion runs `dev` -> `sit` -> `pat` -> `main`, by pull request at each step.
+
+| Branch | Environment | Gate |
+|---|---|---|
+| `dev`  | Dev | none - merges and deploys on a green build |
+| `sit`  | SIT | a reviewer must approve before the promote job runs |
+| `pat`  | PAT | a reviewer must approve before the promote job runs |
+| `main` | -   | the release trunk; no promote job |
+
+CI runs on every push and pull request to all four: ruff, `alembic upgrade head`
+and the full backend suite against a real TimescaleDB and Redis, plus the
+frontend production build. The build is the type check that counts - the dev
+server tolerates things the optimiser silently erases.
+
+Per-environment settings are GitHub Environment secrets, not files in the repo.
+`SECRET_KEY` in CI is a throwaway that only satisfies the 32-byte HS256 minimum;
+nothing here is a real credential, and `.env` stays untracked.
+
 ## A note on scope
 
 Simulated results overstate real ones — always. This repository is an engineering
